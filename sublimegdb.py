@@ -26,9 +26,9 @@ import subprocess
 import threading
 import time
 import traceback
-import sys
 import os
 import re
+import Queue
 
 
 breakpoints = {}
@@ -74,10 +74,14 @@ def update(view):
     # cursor: view.add_regions("sublimegdb.position", breakpoints[view.file_name()], "entity.name.class", "bookmark", sublime.HIDDEN)
 
 count = 0
+
+
 def run_cmd(cmd, block=False):
     global count
-    count = count+1
-    gdb_process.stdin.write("%d%s\n" % (count, cmd))
+    count = count + 1
+    cmd = "%d%s\n" % (count, cmd)
+    output.put(cmd)
+    gdb_process.stdin.write(cmd)
     if block:
         countstr = "%d^" % count
         while not gdb_lastresult.startswith(countstr):
@@ -115,7 +119,6 @@ def remove_breakpoint(filename, line):
         run_cmd("-break-list", True)
         for bp in gdb_breakpoints:
             if bp.data["file"] == filename and bp.data["line"] == str(line):
-                print "found!"
                 run_cmd("-break-delete %s" % bp.data["number"])
                 break
         if res:
@@ -137,8 +140,7 @@ def sync_breakpoints():
 
 
 gdb_process = None
-lock = threading.Lock()
-output = []
+output = Queue.Queue()
 gdb_view = None
 
 
@@ -154,30 +156,28 @@ def get_view():
 
 def update_view():
     global output
-    lock.acquire()
-    try:
-        gdb_view = get_view()
-        if (gdb_view.is_loading()):
-            sublime.set_timeout(update_view, 100)
-            return
+    gdb_view = get_view()
+    if (gdb_view.is_loading()):
+        sublime.set_timeout(update_view, 100)
+        return
 
-        e = gdb_view.begin_edit()
-        try:
-            gdb_view.set_read_only(False)
-            for line in output:
-                gdb_view.insert(e, gdb_view.size(), line)
-            gdb_view.set_read_only(True)
-            gdb_view.show(gdb_view.size())
-            output = []
-        finally:
-            gdb_view.end_edit(e)
+    e = gdb_view.begin_edit()
+    gdb_view.set_read_only(False)
+    try:
+        while True:
+            line = output.get_nowait()
+            gdb_view.insert(e, gdb_view.size(), line)
+            output.task_done()
+    except:
+        pass
     finally:
-        lock.release()
+        gdb_view.end_edit(e)
+        gdb_view.set_read_only(True)
+        gdb_view.show(gdb_view.size())
 
 
 def gdboutput(pipe):
     global gdb_process
-    global lock
     global output
     global gdb_lastresult
     global gdb_lastline
@@ -195,16 +195,12 @@ def gdboutput(pipe):
                     extract_breakpoints(line)
                 if command_result_regex.match(line) != None:
                     gdb_lastresult = line
-                lock.acquire()
-                output.append("%s\n" % line)
-                lock.release()
+                output.put("%s\n" % line)
                 sublime.set_timeout(update_view, 0)
         except:
             traceback.print_exc()
     if pipe == gdb_process.stdout:
-        lock.acquire()
-        output.append("GDB session ended\n")
-        lock.release()
+        output.put("GDB session ended\n")
         sublime.set_timeout(update_view, 0)
 
 
@@ -218,7 +214,7 @@ class GdbInput(sublime_plugin.TextCommand):
 
 
 def input_on_done(s):
-    gdb_process.stdin.write("%s\n" % s)
+    run_cmd(s)
     if s.strip() != "quit":
         show_input()
 
