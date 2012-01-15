@@ -5,6 +5,7 @@ import threading
 import time
 import traceback
 import sys
+import os
 
 breakpoints = {}
 
@@ -34,7 +35,6 @@ def sync_breakpoints():
     for file in breakpoints:
         for bp in breakpoints[file]:
             cmd = "break %s:%d\n" % (file, bp)
-            print cmd
             gdb_process.stdin.write(cmd)
 
 
@@ -140,8 +140,8 @@ def get_setting(key, default=None):
 class GdbLaunch(sublime_plugin.TextCommand):
     def run(self, edit):
         global gdb_process
-        global gdb_view
         if gdb_process == None or gdb_process.poll() != None:
+            os.chdir(get_setting("workingdir", "/tmp"))
             gdb_process = subprocess.Popen(get_setting("commandline"), shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             sync_breakpoints()
 
