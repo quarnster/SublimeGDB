@@ -1,0 +1,7 @@
+{
+    "commandline":
+    [
+        "gdb",
+        "/absolute/path/to/your/executable"
+    ]
+}
