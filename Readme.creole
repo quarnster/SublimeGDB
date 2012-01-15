@@ -1,0 +1,2 @@
+=== Description ===
+GDB plugin for Sublime Text 2. This is in a veeeeery early state so probably isn't useful for you yet. Pull requests are more than welcome.
