@@ -6,8 +6,30 @@ import time
 import traceback
 import sys
 import os
+import re
 
 breakpoints = {}
+
+gdb_breakpoints = []
+#
+
+class GDBBreakpoint:
+    def __init__(self, string):
+        print "Breakpoint"
+        string = string.split(",")
+        self.data = {}
+        for pair in string:
+            key, value = pair.split("=")
+            value = value.replace("\"", "")
+            print "key: %s, value: %s" % (key, value)
+            self.data[key] = value
+
+def extract_breakpoints(line):
+    global gdb_breakpoints
+    gdb_breakpoints = []
+    bps = re.findall("(?<=,bkpt\=\{)[a-zA-Z,=/\"0-9.]+", line)
+    for bp in bps:
+        gdb_breakpoints.append(GDBBreakpoint(bp))
 
 
 def update(view):
@@ -19,11 +41,40 @@ def update(view):
 
     # cursor: view.add_regions("sublimegdb.position", breakpoints[view.file_name()], "entity.name.class", "bookmark", sublime.HIDDEN)
 
+def run_cmd(cmd, block=False):
+    global is_at_prompt
+    is_at_prompt = False
+    gdb_process.stdin.write("%s\n" % cmd)
+    while block and not is_at_prompt:
+        time.sleep(0.1)
+
 def add_breakpoint(filename, line):
     breakpoints[filename].append(line)
+    start_at_prompt = is_at_prompt
+    if is_running():
+        if not is_at_prompt:
+            run_cmd("-exec-interrupt", True)
+        run_cmd("-break-insert %s:%d" % (filename, line))
+        if not start_at_prompt:
+            run_cmd("-exec-continue")
+
 
 def remove_breakpoint(filename, line):
     breakpoints[filename].remove(line)
+    start_at_prompt = is_at_prompt
+    if is_running():
+        while not is_at_prompt:
+            run_cmd("-exec-interrupt")
+            time.sleep(0.1)
+        run_cmd("-break-list", True)
+        for bp in gdb_breakpoints:
+            if bp.data["file"] == filename and bp.data["line"] == str(line):
+                print "found!"
+                run_cmd("-break-delete %s" % bp.data["number"])
+                break
+
+        if not start_at_prompt:
+            run_cmd("-exec-continue")
 
 def toggle_breakpoint(filename, line):
     if line in breakpoints[filename]:
@@ -34,8 +85,9 @@ def toggle_breakpoint(filename, line):
 def sync_breakpoints():
     for file in breakpoints:
         for bp in breakpoints[file]:
-            cmd = "break %s:%d\n" % (file, bp)
-            gdb_process.stdin.write(cmd)
+            cmd = "-break-insert %s:%d" % (file, bp)
+            run_cmd(cmd)
+
 
 
 class GdbToggleBreakpoint(sublime_plugin.TextCommand):
@@ -47,6 +99,8 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
         line, col = self.view.rowcol(self.view.sel()[0].a)
         toggle_breakpoint(fn, line + 1)
         update(self.view)
+
+is_at_prompt = False
 
 gdb_process = None
 lock = threading.Lock()
@@ -87,12 +141,17 @@ def gdboutput(pipe):
     global old_stdin
     global lock
     global output
+    global is_at_prompt
     while True:
         try:
             if gdb_process.poll() != None:
                 break
-            line = pipe.readline().replace("(gdb)", "").strip()
+            line = pipe.readline().strip()
+            is_at_prompt = "(gdb)" in line
+
             if len(line) > 0:
+                if "BreakpointTable" in line:
+                    extract_breakpoints(line)
                 lock.acquire()
                 output.append("%s\n" % line)
                 lock.release()
@@ -136,19 +195,22 @@ def get_setting(key, default=None):
     return sublime.load_settings("SublimeGDB.sublime-settings").get(key, default)
 
 
+def is_running():
+    return gdb_process != None and gdb_process.poll() == None
+
 
 class GdbLaunch(sublime_plugin.TextCommand):
     def run(self, edit):
         global gdb_process
         if gdb_process == None or gdb_process.poll() != None:
             os.chdir(get_setting("workingdir", "/tmp"))
-            gdb_process = subprocess.Popen(get_setting("commandline"), shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            commandline = get_setting("commandline")
+            commandline.insert(1, "--interpreter=mi")
+            gdb_process = subprocess.Popen(commandline, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
             sync_breakpoints()
+            gdb_process.stdin.write("-exec-run\n")
 
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
-            t.start()
-
-            t = threading.Thread(target=gdboutput, args=(gdb_process.stderr,))
             t.start()
 
             show_input()
@@ -160,8 +222,7 @@ class GdbEventListener(sublime_plugin.EventListener):
         global gdb_process
         if key != "gdb_running":
             return None
-        running = gdb_process != None and gdb_process.poll() == None
-        return running == operand
+        return is_running() == operand
 
 
 
