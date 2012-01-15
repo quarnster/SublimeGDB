@@ -6,6 +6,12 @@
     },
     {
         "command": "gdb_launch",
+        "context": [{"key": "gdb_running", "operator": "equal", "operand": false}],
+        "keys": ["f5"]
+    },
+    {
+        "command": "gdb_input",
+        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
         "keys": ["f5"]
     }
 ]

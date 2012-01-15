@@ -30,6 +30,7 @@ gdb_process = None
 
 
 def gdboutput():
+    global gdb_process
     while True:
         try:
             if gdb_process.poll() != None:
@@ -47,6 +48,23 @@ def gdbkill():
     gdb_process.wait()
 
 
+def show_input():
+    sublime.active_window().show_input_panel("GDB", "quit", input_on_done, input_on_change, input_on_cancel)
+
+class GdbInput(sublime_plugin.TextCommand):
+    def run(self, edit):
+        show_input()
+
+
+def input_on_done(s):
+    gdb_process.stdin.write("%s\n" % s)
+
+def input_on_cancel():
+    pass
+
+def input_on_change(s):
+    pass
+
 class GdbLaunch(sublime_plugin.TextCommand):
     def run(self, edit):
         global gdb_process
@@ -56,13 +74,17 @@ class GdbLaunch(sublime_plugin.TextCommand):
             t = threading.Thread(target=gdboutput)
             t.start()
 
-            t = threading.Thread(target=gdbkill)
-            t.start()
+            show_input()
         else:
-            sublime.status_message("Already running!")
+            sublime.status_message("GDB is already running!")
 
-
-
+class GdbEventListener(sublime_plugin.EventListener):
+    def on_query_context(self, view, key, operator, operand, match_all):
+        global gdb_process
+        if key != "gdb_running":
+            return None
+        running = gdb_process != None and gdb_process.poll() == None
+        return running == operand
 
 
 
