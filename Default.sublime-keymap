@@ -1,0 +1,11 @@
+[
+    {
+        "command": "gdb_toggle_breakpoint",
+        "context": [{"key": "clang_supported_language"}],
+        "keys": ["ctrl+i"]
+    },
+    {
+        "command": "gdb_launch",
+        "keys": ["f5"]
+    }
+]
