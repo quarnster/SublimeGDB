@@ -39,6 +39,38 @@ gdb_lastline = ""
 gdb_cursor = ""
 
 
+class GDBView:
+    def __init__(self, name):
+        self.queue = Queue.Queue()
+        self.name = name
+        self.create_view()
+
+    def add_line(self, line):
+        self.queue.put(line)
+        sublime.set_timeout(self.update, 0)
+
+    def create_view(self):
+        self.view = sublime.active_window().new_file()
+        self.view.set_name(self.name)
+        self.view.set_scratch(True)
+        self.view.set_read_only(True)
+
+    def update(self):
+        print "window: %s" % self.view.window()
+        e = self.view.begin_edit()
+        self.view.set_read_only(False)
+        try:
+            while True:
+                line = self.queue.get_nowait()
+                self.view.insert(e, self.view.size(), line)
+                self.queue.task_done()
+        except:
+            pass
+        finally:
+            self.view.end_edit(e)
+            self.view.set_read_only(True)
+            self.view.show(self.view.size())
+
 class GDBValuePairs:
     def __init__(self, string):
         string = string.split(",")
@@ -140,45 +172,12 @@ def sync_breakpoints():
 
 
 gdb_process = None
-output = Queue.Queue()
-gdb_view = None
-
-
-def get_view():
-    global gdb_view
-    if gdb_view == None:
-        gdb_view = sublime.active_window().new_file()
-        gdb_view.set_name("GDB session")
-        gdb_view.set_scratch(True)
-        gdb_view.set_read_only(True)
-    return gdb_view
-
-
-def update_view():
-    global output
-    gdb_view = get_view()
-    if (gdb_view.is_loading()):
-        sublime.set_timeout(update_view, 100)
-        return
-
-    e = gdb_view.begin_edit()
-    gdb_view.set_read_only(False)
-    try:
-        while True:
-            line = output.get_nowait()
-            gdb_view.insert(e, gdb_view.size(), line)
-            output.task_done()
-    except:
-        pass
-    finally:
-        gdb_view.end_edit(e)
-        gdb_view.set_read_only(True)
-        gdb_view.show(gdb_view.size())
+gdb_session_view = None
+gdb_console_view = None
 
 
 def gdboutput(pipe):
     global gdb_process
-    global output
     global gdb_lastresult
     global gdb_lastline
     command_result_regex = re.compile("^\d+\^")
@@ -189,19 +188,24 @@ def gdboutput(pipe):
             line = pipe.readline().strip()
 
             if len(line) > 0:
+                gdb_session_view.add_line("%s\n" % line)
+
+
                 if not line.startswith("(gdb)"):
                     gdb_lastline = line
                 if "BreakpointTable" in line:
                     extract_breakpoints(line)
                 if command_result_regex.match(line) != None:
                     gdb_lastresult = line
-                output.put("%s\n" % line)
-                sublime.set_timeout(update_view, 0)
+
+                if line.startswith("~"):
+                    gdb_console_view.add_line(
+                        line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t"))
+
         except:
             traceback.print_exc()
     if pipe == gdb_process.stdout:
-        output.put("GDB session ended\n")
-        sublime.set_timeout(update_view, 0)
+        gdb_session_view.add_line("GDB session ended\n")
 
 
 def show_input():
@@ -244,11 +248,15 @@ def is_running():
 class GdbLaunch(sublime_plugin.TextCommand):
     def run(self, edit):
         global gdb_process
+        global gdb_session_view
+        global gdb_console_view
         if gdb_process == None or gdb_process.poll() != None:
             os.chdir(get_setting("workingdir", "/tmp"))
             commandline = get_setting("commandline")
             commandline.insert(1, "--interpreter=mi")
             gdb_process = subprocess.Popen(commandline, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            gdb_session_view = GDBView("GDB Session")
+            gdb_console_view = GDBView("GDB Console")
             sync_breakpoints()
             gdb_process.stdin.write("-exec-run\n")
 
@@ -307,3 +315,5 @@ class GdbEventListener(sublime_plugin.EventListener):
         if key != "gdb_running":
             return None
         return is_running() == operand
+
+
