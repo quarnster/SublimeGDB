@@ -47,15 +47,20 @@ result_regex = re.compile("(?<=\^)[^,]*")
 class GDBView:
     LINE = 0
     FOLD_ALL = 1
+    CLEAR = 2
 
     def __init__(self, name):
         self.queue = Queue.Queue()
         self.name = name
+        self.closed = False
         self.create_view()
 
     def add_line(self, line):
         self.queue.put((GDBView.LINE, line))
         sublime.set_timeout(self.update, 0)
+
+    def clear(self):
+        self.queue.put((GDBView.CLEAR, None))
 
     def create_view(self):
         self.view = sublime.active_window().new_file()
@@ -63,8 +68,17 @@ class GDBView:
         self.view.set_scratch(True)
         self.view.set_read_only(True)
 
+    def is_closed(self):
+        return self.closed
+
+    def was_closed(self):
+        self.closed = True
+
     def fold_all(self):
         self.queue.put((GDBView.FOLD_ALL, None))
+
+    def get_view(self):
+        return self.view
 
     def update(self):
         e = self.view.begin_edit()
@@ -76,9 +90,11 @@ class GDBView:
                     self.view.insert(e, self.view.size(), data)
                 elif cmd == GDBView.FOLD_ALL:
                     self.view.run_command("fold_all")
-
+                elif cmd == GDBView.CLEAR:
+                    self.view.erase(e, sublime.Region(0, self.view.size()))
                 self.queue.task_done()
         except:
+            # get_nowait throws an exception when there's nothing..
             pass
         finally:
             self.view.end_edit(e)
@@ -91,12 +107,10 @@ class GDBValuePairs:
         string = string.split(",")
         self.data = {}
         for pair in string:
-            print "pair: %s" % pair
             if not "=" in pair:
                 continue
             key, value = pair.split("=")
             value = value.replace("\"", "")
-            print key, value
             self.data[key] = value
 
     def __getitem__(self, key):
@@ -144,16 +158,18 @@ def variable_stuff(line, indent=""):
 def locals(line):
     varobjs = line[:line.rfind("}}") + 1]
     varobjs = varobjs.split("varobj=")[1:]
+    gdb_locals_view.clear()
 
     for varobj in varobjs:
         var = GDBValuePairs(varobj[1:-1])
         gdb_locals_view.add_line("%s %s %s=(%s) %s\n" % (var["typecode"], var["type"], var["exp"], var["dynamic_type"], var["value"]))
+        """
         try:
             data = run_cmd("-data-evaluate-expression %s" % var["exp"], True)
             gdb_locals_view.add_line(variable_stuff(data, "\t"))
         except:
             traceback.print_exc()
-
+        """
     gdb_locals_view.fold_all()
 
 
@@ -281,8 +297,6 @@ def update_cursor():
         update()
         return
     frames = extract_stackframes(line)
-    print line
-    print "%s" % frames[0]
     gdb_cursor = frames[0]["fullname"]
     gdb_cursor_position = int(frames[0]["line"])
     sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
@@ -375,9 +389,31 @@ class GdbLaunch(sublime_plugin.TextCommand):
             commandline = get_setting("commandline")
             commandline.insert(1, "--interpreter=mi")
             gdb_process = subprocess.Popen(commandline, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-            gdb_session_view = GDBView("GDB Session")
-            gdb_console_view = GDBView("GDB Console")
-            gdb_locals_view = GDBView("GDB locals")
+            w = self.view.window()
+            w.set_layout(
+                get_setting("layout",
+                    {
+                        "cols": [0.0, 0.5, 1.0],
+                        "rows": [0.0, 0.75, 1.0],
+                        "cells": [[0, 0, 2, 1], [0, 1, 1, 2], [1, 1, 2, 2]]
+                    }
+                )
+            )
+
+            if gdb_session_view == None or gdb_session_view.is_closed():
+                gdb_session_view = GDBView("GDB Session")
+            if gdb_console_view == None or gdb_console_view.is_closed():
+                gdb_console_view = GDBView("GDB Console")
+            if gdb_locals_view == None or gdb_locals_view.is_closed():
+                gdb_locals_view = GDBView("GDB locals")
+
+            gdb_session_view.clear()
+            gdb_console_view.clear()
+            gdb_locals_view.clear()
+
+            w.set_view_index(gdb_session_view.get_view(), get_setting("session_group", 1), get_setting("session_index", 0))
+            w.set_view_index(gdb_console_view.get_view(), get_setting("console_group", 1), get_setting("console_index", 1))
+            w.set_view_index(gdb_locals_view.get_view(), get_setting("locals_group", 2), get_setting("locals_index", 0))
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
 
@@ -451,3 +487,11 @@ class GdbEventListener(sublime_plugin.EventListener):
     def on_load(self, view):
         if view.file_name() != None:
             update(view)
+
+    def on_close(self, view):
+        if view.id() == gdb_session_view.get_view().id():
+            gdb_session_view.was_closed()
+        if view.id() == gdb_console_view.get_view().id():
+            gdb_console_view.was_closed()
+        if view.id() == gdb_locals_view.get_view().id():
+            gdb_locals_view.was_closed()
