@@ -38,9 +38,12 @@ gdb_cursor = ""
 gdb_cursor_position = 0
 
 gdb_process = None
+
+
 gdb_session_view = None
 gdb_console_view = None
 gdb_locals_view = None
+gdb_callstack_view = None
 result_regex = re.compile("(?<=\^)[^,]*")
 
 
@@ -189,6 +192,18 @@ def extract_stackframes(line):
     return gdb_stackframes
 
 
+def extract_stackargs(line):
+    gdb_stackargs = []
+    frames = line.split("level=")[1:]
+    for frame in frames:
+        curr = []
+        args = re.findall("name\=[^}]+", frame)
+        for arg in args:
+            curr.append(GDBValuePairs(arg))
+        gdb_stackargs.append(curr)
+    return gdb_stackargs
+
+
 def update(view=None):
     if view == None:
         view = sublime.active_window().active_view()
@@ -291,7 +306,7 @@ def get_result(line):
 def update_cursor():
     global gdb_cursor
     global gdb_cursor_position
-    line = run_cmd("-stack-info-frame", True)
+    line = run_cmd("-stack-list-frames", True)
     if get_result(line) == "error":
         gdb_cursor_position = 0
         update()
@@ -299,6 +314,18 @@ def update_cursor():
     frames = extract_stackframes(line)
     gdb_cursor = frames[0]["fullname"]
     gdb_cursor_position = int(frames[0]["line"])
+
+    line = run_cmd("-stack-list-arguments 1", True)
+    args = extract_stackargs(line)
+    gdb_callstack_view.clear()
+    for i in range(len(frames)):
+        output = "%s(" % frames[i]["func"]
+        for v in args[i]:
+            output += "%s = %s, " % (v["name"], v["value"])
+        output += ")\n"
+
+        gdb_callstack_view.add_line(output)
+
     sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
     update()
     locals(run_cmd("-stack-list-locals 2", True))
@@ -384,6 +411,7 @@ class GdbLaunch(sublime_plugin.TextCommand):
         global gdb_session_view
         global gdb_console_view
         global gdb_locals_view
+        global gdb_callstack_view
         if gdb_process == None or gdb_process.poll() != None:
             os.chdir(get_setting("workingdir", "/tmp"))
             commandline = get_setting("commandline")
@@ -405,15 +433,19 @@ class GdbLaunch(sublime_plugin.TextCommand):
             if gdb_console_view == None or gdb_console_view.is_closed():
                 gdb_console_view = GDBView("GDB Console")
             if gdb_locals_view == None or gdb_locals_view.is_closed():
-                gdb_locals_view = GDBView("GDB locals")
+                gdb_locals_view = GDBView("GDB Locals")
+            if gdb_callstack_view == None or gdb_callstack_view.is_closed():
+                gdb_callstack_view = GDBView("GDB Callstack")
 
             gdb_session_view.clear()
             gdb_console_view.clear()
             gdb_locals_view.clear()
+            gdb_callstack_view.clear()
 
             w.set_view_index(gdb_session_view.get_view(), get_setting("session_group", 1), get_setting("session_index", 0))
             w.set_view_index(gdb_console_view.get_view(), get_setting("console_group", 1), get_setting("console_index", 1))
             w.set_view_index(gdb_locals_view.get_view(), get_setting("locals_group", 2), get_setting("locals_index", 0))
+            w.set_view_index(gdb_callstack_view.get_view(), get_setting("callstack_group", 2), get_setting("callstack_index", 0))
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
 
@@ -489,9 +521,11 @@ class GdbEventListener(sublime_plugin.EventListener):
             update(view)
 
     def on_close(self, view):
-        if view.id() == gdb_session_view.get_view().id():
+        if gdb_session_view != None and view.id() == gdb_session_view.get_view().id():
             gdb_session_view.was_closed()
-        if view.id() == gdb_console_view.get_view().id():
+        if gdb_console_view != None and view.id() == gdb_console_view.get_view().id():
             gdb_console_view.was_closed()
-        if view.id() == gdb_locals_view.get_view().id():
+        if gdb_locals_view != None and view.id() == gdb_locals_view.get_view().id():
             gdb_locals_view.was_closed()
+        if gdb_callstack_view != None and view.id() == gdb_callstack_view.get_view().id():
+            gdb_callstack_view.was_closed()
