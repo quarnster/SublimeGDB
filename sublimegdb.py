@@ -32,7 +32,6 @@ import Queue
 
 
 breakpoints = {}
-gdb_breakpoints = []
 gdb_lastresult = ""
 gdb_lastline = ""
 gdb_cursor = ""
@@ -159,11 +158,11 @@ def locals(line):
 
 
 def extract_breakpoints(line):
-    global gdb_breakpoints
     gdb_breakpoints = []
     bps = re.findall("(?<=,bkpt\=\{)[^}]+", line)
     for bp in bps:
         gdb_breakpoints.append(GDBValuePairs(bp))
+    return gdb_breakpoints
 
 
 def extract_stackframes(line):
@@ -234,7 +233,7 @@ def remove_breakpoint(filename, line):
     breakpoints[filename].remove(line)
     if is_running():
         res = wait_until_stopped()
-        run_cmd("-break-list", True)
+        gdb_breakpoints = extract_breakpoints(run_cmd("-break-list", True))
         for bp in gdb_breakpoints:
             if bp.data["file"] == filename and bp.data["line"] == str(line):
                 run_cmd("-break-delete %s" % bp.data["number"])
@@ -251,10 +250,19 @@ def toggle_breakpoint(filename, line):
 
 
 def sync_breakpoints():
+    global breakpoints
+    newbps = {}
     for file in breakpoints:
         for bp in breakpoints[file]:
             cmd = "-break-insert %s:%d" % (file, bp)
-            run_cmd(cmd)
+            out = run_cmd(cmd, True)
+            bp = extract_breakpoints(out)[0]
+            f = bp["file"]
+            if not f in newbps:
+                newbps[f] = []
+            newbps[f].append(int(bp["line"]))
+    breakpoints = newbps
+    update()
 
 
 def get_result(line):
@@ -367,12 +375,11 @@ class GdbLaunch(sublime_plugin.TextCommand):
             gdb_session_view = GDBView("GDB Session")
             gdb_console_view = GDBView("GDB Console")
             gdb_locals_view = GDBView("GDB locals")
-            sync_breakpoints()
-            gdb_process.stdin.write("-exec-run\n")
-
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
 
+            sync_breakpoints()
+            gdb_process.stdin.write("-exec-run\n")
             show_input()
         else:
             sublime.status_message("GDB is already running!")
@@ -380,6 +387,9 @@ class GdbLaunch(sublime_plugin.TextCommand):
 
 class GdbContinue(sublime_plugin.TextCommand):
     def run(self, edit):
+        global gdb_cursor_position
+        gdb_cursor_position = 0
+        update(self.view)
         run_cmd("-exec-continue")
 
 
