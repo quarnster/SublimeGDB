@@ -38,15 +38,24 @@ gdb_lastline = ""
 gdb_cursor = ""
 gdb_cursor_position = 0
 
+gdb_process = None
+gdb_session_view = None
+gdb_console_view = None
+gdb_locals_view = None
+result_regex = re.compile("(?<=\^)[^,]*")
+
 
 class GDBView:
+    LINE = 0
+    FOLD_ALL = 1
+
     def __init__(self, name):
         self.queue = Queue.Queue()
         self.name = name
         self.create_view()
 
     def add_line(self, line):
-        self.queue.put(line)
+        self.queue.put((GDBView.LINE, line))
         sublime.set_timeout(self.update, 0)
 
     def create_view(self):
@@ -55,13 +64,20 @@ class GDBView:
         self.view.set_scratch(True)
         self.view.set_read_only(True)
 
+    def fold_all(self):
+        self.queue.put((GDBView.FOLD_ALL, None))
+
     def update(self):
         e = self.view.begin_edit()
         self.view.set_read_only(False)
         try:
             while True:
-                line = self.queue.get_nowait()
-                self.view.insert(e, self.view.size(), line)
+                cmd, data = self.queue.get_nowait()
+                if cmd == GDBView.LINE:
+                    self.view.insert(e, self.view.size(), data)
+                elif cmd == GDBView.FOLD_ALL:
+                    self.view.run_command("fold_all")
+
                 self.queue.task_done()
         except:
             pass
@@ -69,6 +85,7 @@ class GDBView:
             self.view.end_edit(e)
             self.view.set_read_only(True)
             self.view.show(self.view.size())
+
 
 class GDBValuePairs:
     def __init__(self, string):
@@ -88,6 +105,57 @@ class GDBValuePairs:
 
     def __str__(self):
         return "%s" % self.data
+
+
+def variable_stuff(line, indent=""):
+    line = line[line.find("value=") + 7:]
+    if line[0] == "{":
+        line = line[1:]
+    start = 0
+    level = 0
+    output = ""
+    for idx in range(len(line)):
+        char = line[idx]
+        if char == '{':
+            data = line[start:idx].strip()
+            output += "%s%s\n" % (indent, data)
+
+            start = idx + 1
+            indent = indent + "\t"
+        elif char == '}':
+            output += "%s%s" % (indent, line[start:idx].strip())
+            start = idx + 1
+            indent = indent[:-1]
+        elif char == "," and level == 0:
+            data = line[start:idx].strip()
+            output += "%s%s\n" % (indent, data)
+            start = idx + 1
+        elif char == "\"":
+            data = line[start:idx].strip()
+            output += "%s%s\n" % (indent, data)
+            break
+        elif char == "(" or char == "<":
+            level += 1
+        elif char == ")" or char == ">":
+            level -= 1
+
+    return output
+
+
+def locals(line):
+    varobjs = line[:line.rfind("}}") + 1]
+    varobjs = varobjs.split("varobj=")[1:]
+
+    for varobj in varobjs:
+        var = GDBValuePairs(varobj[1:-1])
+        gdb_locals_view.add_line("%s %s %s=(%s) %s\n" % (var["typecode"], var["type"], var["exp"], var["dynamic_type"], var["value"]))
+        try:
+            data = run_cmd("-data-evaluate-expression %s" % var["exp"], True)
+            gdb_locals_view.add_line(variable_stuff(data, "\t"))
+        except:
+            traceback.print_exc()
+
+    gdb_locals_view.fold_all()
 
 
 def extract_breakpoints(line):
@@ -119,7 +187,7 @@ def update(view=None):
     cursor = []
 
     if fn == gdb_cursor and gdb_cursor_position != 0:
-        cursor.append(view.full_line(view.text_point(gdb_cursor_position-1, 0)))
+        cursor.append(view.full_line(view.text_point(gdb_cursor_position - 1, 0)))
 
     view.add_regions("sublimegdb.position", cursor, "entity.name.class", "bookmark", sublime.HIDDEN)
 
@@ -189,14 +257,18 @@ def sync_breakpoints():
             run_cmd(cmd)
 
 
-gdb_process = None
-gdb_session_view = None
-gdb_console_view = None
+def get_result(line):
+    return result_regex.search(line).group(0)
+
 
 def update_cursor():
     global gdb_cursor
     global gdb_cursor_position
     line = run_cmd("-stack-info-frame", True)
+    if get_result(line) == "error":
+        gdb_cursor_position = 0
+        update()
+        return
     frames = extract_stackframes(line)
     print line
     print "%s" % frames[0]
@@ -204,6 +276,7 @@ def update_cursor():
     gdb_cursor_position = int(frames[0]["line"])
     sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
     update()
+    locals(run_cmd("-stack-list-locals 2", True))
 
 
 def gdboutput(pipe):
@@ -285,6 +358,7 @@ class GdbLaunch(sublime_plugin.TextCommand):
         global gdb_process
         global gdb_session_view
         global gdb_console_view
+        global gdb_locals_view
         if gdb_process == None or gdb_process.poll() != None:
             os.chdir(get_setting("workingdir", "/tmp"))
             commandline = get_setting("commandline")
@@ -292,6 +366,7 @@ class GdbLaunch(sublime_plugin.TextCommand):
             gdb_process = subprocess.Popen(commandline, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
             gdb_session_view = GDBView("GDB Session")
             gdb_console_view = GDBView("GDB Console")
+            gdb_locals_view = GDBView("GDB locals")
             sync_breakpoints()
             gdb_process.stdin.write("-exec-run\n")
 
@@ -321,6 +396,7 @@ class GdbPause(sublime_plugin.TextCommand):
 class GdbStepOver(sublime_plugin.TextCommand):
     def run(self, edit):
         run_cmd("-exec-next")
+
 
 class GdbStepInto(sublime_plugin.TextCommand):
     def run(self, edit):
@@ -362,5 +438,3 @@ class GdbEventListener(sublime_plugin.EventListener):
     def on_load(self, view):
         if view.file_name() != None:
             update(view)
-
-

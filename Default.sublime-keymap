@@ -1,8 +1,12 @@
 [
     {
+        "command": "gdb_input",
+        "keys": ["shift+f5"]
+    },
+    {
         "command": "gdb_toggle_breakpoint",
         "context": [{"key": "clang_supported_language"}],
-        "keys": ["ctrl+i"]
+        "keys": ["f9"]
     },
     {
         "command": "gdb_launch",
