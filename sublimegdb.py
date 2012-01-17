@@ -254,6 +254,9 @@ def sync_breakpoints():
     newbps = {}
     for file in breakpoints:
         for bp in breakpoints[file]:
+            if file in newbps:
+                if bp in newbps[file]:
+                    continue
             cmd = "-break-insert %s:%d" % (file, bp)
             out = run_cmd(cmd, True)
             bp = extract_breakpoints(out)[0]
