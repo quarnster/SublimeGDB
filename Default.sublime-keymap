@@ -10,8 +10,23 @@
         "keys": ["f5"]
     },
     {
-        "command": "gdb_input",
+        "command": "gdb_continue",
         "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
         "keys": ["f5"]
+    },
+    {
+        "command": "gdb_step_over",
+        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
+        "keys": ["f10"]
+    },
+    {
+        "command": "gdb_step_into",
+        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
+        "keys": ["f11"]
+    },
+    {
+        "command": "gdb_step_out",
+        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
+        "keys": ["shift+f11"]
     }
 ]

@@ -33,10 +33,10 @@ import Queue
 
 breakpoints = {}
 gdb_breakpoints = []
-gdb_stackframes = []
 gdb_lastresult = ""
 gdb_lastline = ""
 gdb_cursor = ""
+gdb_cursor_position = 0
 
 
 class GDBView:
@@ -56,7 +56,6 @@ class GDBView:
         self.view.set_read_only(True)
 
     def update(self):
-        print "window: %s" % self.view.window()
         e = self.view.begin_edit()
         self.view.set_read_only(False)
         try:
@@ -76,34 +75,53 @@ class GDBValuePairs:
         string = string.split(",")
         self.data = {}
         for pair in string:
+            print "pair: %s" % pair
+            if not "=" in pair:
+                continue
             key, value = pair.split("=")
             value = value.replace("\"", "")
+            print key, value
             self.data[key] = value
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+    def __str__(self):
+        return "%s" % self.data
 
 
 def extract_breakpoints(line):
     global gdb_breakpoints
     gdb_breakpoints = []
-    bps = re.findall("(?<=,bkpt\=\{)[a-zA-Z,=/\"0-9.]+", line)
+    bps = re.findall("(?<=,bkpt\=\{)[^}]+", line)
     for bp in bps:
         gdb_breakpoints.append(GDBValuePairs(bp))
 
 
 def extract_stackframes(line):
-    global gdb_stackframes
     gdb_stackframes = []
-    frames = re.findall("(?<=frame\=\{)[a-zA-Z,=/\"0-9.]+", line)
+    frames = re.findall("(?<=frame\=\{)[^}]+", line)
     for frame in frames:
         gdb_stackframes.append(GDBValuePairs(frame))
+    return gdb_stackframes
 
 
-def update(view):
+def update(view=None):
+    if view == None:
+        view = sublime.active_window().active_view()
     bps = []
-    for line in breakpoints[view.file_name()]:
-        bps.append(view.full_line(view.text_point(line - 1, 0)))
+    fn = view.file_name()
+    if fn in breakpoints:
+        for line in breakpoints[fn]:
+            if not (line == gdb_cursor_position and fn == gdb_cursor):
+                bps.append(view.full_line(view.text_point(line - 1, 0)))
     view.add_regions("sublimegdb.breakpoints", bps, "keyword.gdb", "circle", sublime.HIDDEN)
-    #if hit_breakpoint:
-    # cursor: view.add_regions("sublimegdb.position", breakpoints[view.file_name()], "entity.name.class", "bookmark", sublime.HIDDEN)
+    cursor = []
+
+    if fn == gdb_cursor and gdb_cursor_position != 0:
+        cursor.append(view.full_line(view.text_point(gdb_cursor_position-1, 0)))
+
+    view.add_regions("sublimegdb.position", cursor, "entity.name.class", "bookmark", sublime.HIDDEN)
 
 count = 0
 
@@ -112,7 +130,7 @@ def run_cmd(cmd, block=False):
     global count
     count = count + 1
     cmd = "%d%s\n" % (count, cmd)
-    output.put(cmd)
+    gdb_session_view.add_line(cmd)
     gdb_process.stdin.write(cmd)
     if block:
         countstr = "%d^" % count
@@ -175,12 +193,25 @@ gdb_process = None
 gdb_session_view = None
 gdb_console_view = None
 
+def update_cursor():
+    global gdb_cursor
+    global gdb_cursor_position
+    line = run_cmd("-stack-info-frame", True)
+    frames = extract_stackframes(line)
+    print line
+    print "%s" % frames[0]
+    gdb_cursor = frames[0]["fullname"]
+    gdb_cursor_position = int(frames[0]["line"])
+    sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
+    update()
+
 
 def gdboutput(pipe):
     global gdb_process
     global gdb_lastresult
     global gdb_lastline
     command_result_regex = re.compile("^\d+\^")
+    stopped_regex = re.compile("^\d*\*stopped")
     while True:
         try:
             if gdb_process.poll() != None:
@@ -190,7 +221,8 @@ def gdboutput(pipe):
             if len(line) > 0:
                 gdb_session_view.add_line("%s\n" % line)
 
-
+                if stopped_regex.match(line) != None:
+                    sublime.set_timeout(update_cursor, 0)
                 if not line.startswith("(gdb)"):
                     gdb_lastline = line
                 if "BreakpointTable" in line:
@@ -206,15 +238,13 @@ def gdboutput(pipe):
             traceback.print_exc()
     if pipe == gdb_process.stdout:
         gdb_session_view.add_line("GDB session ended\n")
+    global gdb_cursor_position
+    gdb_cursor_position = 0
+    sublime.set_timeout(update, 0)
 
 
 def show_input():
     sublime.active_window().show_input_panel("GDB", "", input_on_done, input_on_change, input_on_cancel)
-
-
-class GdbInput(sublime_plugin.TextCommand):
-    def run(self, edit):
-        show_input()
 
 
 def input_on_done(s):
@@ -245,6 +275,11 @@ def is_running():
     return gdb_process != None and gdb_process.poll() == None
 
 
+class GdbInput(sublime_plugin.TextCommand):
+    def run(self, edit):
+        show_input()
+
+
 class GdbLaunch(sublime_plugin.TextCommand):
     def run(self, edit):
         global gdb_process
@@ -268,6 +303,11 @@ class GdbLaunch(sublime_plugin.TextCommand):
             sublime.status_message("GDB is already running!")
 
 
+class GdbContinue(sublime_plugin.TextCommand):
+    def run(self, edit):
+        run_cmd("-exec-continue")
+
+
 class GdbExit(sublime_plugin.TextCommand):
     def run(self, edit):
         run_cmd("-gdb-exit")
@@ -278,9 +318,13 @@ class GdbPause(sublime_plugin.TextCommand):
         run_cmd("-gdb-interrupt")
 
 
-class GdbNext(sublime_plugin.TextCommand):
+class GdbStepOver(sublime_plugin.TextCommand):
     def run(self, edit):
         run_cmd("-exec-next")
+
+class GdbStepInto(sublime_plugin.TextCommand):
+    def run(self, edit):
+        run_cmd("-exec-step")
 
 
 class GdbNextInstruction(sublime_plugin.TextCommand):
@@ -305,15 +349,18 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
 
 
 class GdbEventListener(sublime_plugin.EventListener):
-    def on_close(self, view):
-        global gdb_view
-        if view == gdb_view:
-            gdb_view = None
-
     def on_query_context(self, view, key, operator, operand, match_all):
         global gdb_process
         if key != "gdb_running":
             return None
         return is_running() == operand
+
+    def on_activated(self, view):
+        if view.file_name() != None:
+            update(view)
+
+    def on_load(self, view):
+        if view.file_name() != None:
+            update(view)
 
 
