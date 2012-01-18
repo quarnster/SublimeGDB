@@ -53,6 +53,7 @@ def log_debug(line):
     if DEBUG:
         os.system("echo \"%s\" >> /tmp/debug.txt" % line)
 
+
 class GDBView:
     LINE = 0
     FOLD_ALL = 1
@@ -143,6 +144,7 @@ class GDBValuePairs:
     def __str__(self):
         return "%s" % self.data
 
+
 class GDBVariable:
     def __init__(self, vp):
         self.valuepair = vp
@@ -155,11 +157,10 @@ class GDBVariable:
         if not (len(self.children) == 0 and int(self.valuepair["numchild"]) > 0):
             return
         line = run_cmd("-var-list-children 1 \"%s\"" % self.valuepair["name"], True)
-        children = re.split("[},|{]child=\{", line[:line.rfind("}}")+1])[1:]
+        children = re.split("[},|{]child=\{", line[:line.rfind("}}") + 1])[1:]
         for child in children:
             child = GDBValuePairs(child[:-1])
             self.children.append(GDBVariable(child))
-
 
     def has_children(self):
         return int(self.valuepair["numchild"]) > 0
@@ -170,7 +171,7 @@ class GDBVariable:
     def __str__(self):
         return "%s %s = %s" % (self.valuepair['type'], self.valuepair['exp'], self.valuepair['value'])
 
-    def format(self, indent="", output = "", line=0):
+    def format(self, indent="", output="", line=0):
         icon = " "
         if self.has_children():
             if self.is_expanded:
@@ -185,6 +186,7 @@ class GDBVariable:
             for child in self.children:
                 output, line = child.format(indent, output, line)
         return (output, line)
+
 
 def variable_stuff(line, indent=""):
     line = line[line.find("value=") + 7:]
@@ -230,6 +232,7 @@ def extract_varobjs(line):
         ret.append(var)
     return ret
 
+
 def update_locals_view():
     gdb_locals_view.clear()
     output = ""
@@ -237,6 +240,7 @@ def update_locals_view():
     for local in gdb_locals:
         output, line = local.format(line=line)
         gdb_locals_view.add_line(output)
+
 
 def get_variable_at_line(line, var_list):
     if len(var_list) == 0:
@@ -246,8 +250,8 @@ def get_variable_at_line(line, var_list):
         if var_list[i].line == line:
             return var_list[i]
         elif var_list[i].line > line:
-            return get_variable_at_line(line, var_list[i-1].children)
-    return get_variable_at_line(line, var_list[len(var_list)-1].children)
+            return get_variable_at_line(line, var_list[i - 1].children)
+    return get_variable_at_line(line, var_list[len(var_list) - 1].children)
 
 
 def locals(line):
@@ -257,7 +261,6 @@ def locals(line):
     for var in loc:
         gdb_locals.append(GDBVariable(var))
     update_locals_view()
-
 
 
 def extract_breakpoints(line):
@@ -546,6 +549,9 @@ class GdbLaunch(sublime_plugin.TextCommand):
         else:
             sublime.status_message("GDB is already running!")
 
+    def is_enabled(self):
+        return not is_running()
+
 
 class GdbContinue(sublime_plugin.TextCommand):
     def run(self, edit):
@@ -554,35 +560,56 @@ class GdbContinue(sublime_plugin.TextCommand):
         update(self.view)
         run_cmd("-exec-continue")
 
+    def is_enabled(self):
+        return is_running()
+
 
 class GdbExit(sublime_plugin.TextCommand):
     def run(self, edit):
         run_cmd("-gdb-exit")
+
+    def is_enabled(self):
+        return is_running()
 
 
 class GdbPause(sublime_plugin.TextCommand):
     def run(self, edit):
         run_cmd("-gdb-interrupt")
 
+    def is_enabled(self):
+        return is_running()
+
 
 class GdbStepOver(sublime_plugin.TextCommand):
     def run(self, edit):
         run_cmd("-exec-next")
+
+    def is_enabled(self):
+        return is_running()
 
 
 class GdbStepInto(sublime_plugin.TextCommand):
     def run(self, edit):
         run_cmd("-exec-step")
 
+    def is_enabled(self):
+        return is_running()
+
 
 class GdbNextInstruction(sublime_plugin.TextCommand):
     def run(self, edit):
         run_cmd("-exec-next-instruction")
 
+    def is_enabled(self):
+        return is_running()
+
 
 class GdbStepOut(sublime_plugin.TextCommand):
     def run(self, edit):
         run_cmd("-exec-finish")
+
+    def is_enabled(self):
+        return is_running()
 
 
 class GdbToggleBreakpoint(sublime_plugin.TextCommand):
