@@ -1,25 +1,9 @@
 [
     { "caption": "-", "id": "breakpoints" },
     { "command": "gdb_toggle_breakpoint", "caption": "Toggle Breakpoint" },
-    { "command": "gdb_launch", "caption": "Run", "context": [{"key": "gdb_running", "operator": "equal", "operand": false}]},
-    {
-        "command": "gdb_continue",
-        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
-        "caption": "Continue"
-    },
-    {
-        "command": "gdb_step_over",
-        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
-        "caption": "Step Over"
-    },
-    {
-        "command": "gdb_step_into",
-        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
-        "caption": "Step Into"
-    },
-    {
-        "command": "gdb_step_out",
-        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
-        "caption": "Step Out"
-    }
+    { "command": "gdb_launch", "caption": "Run"},
+    { "command": "gdb_continue", "caption": "Continue" },
+    { "command": "gdb_step_over", "caption": "Step Over" },
+    { "command": "gdb_step_into", "caption": "Step Into" },
+    { "command": "gdb_step_out", "caption": "Step Out" }
 ]
