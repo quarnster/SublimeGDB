@@ -107,12 +107,12 @@ class GDBView:
 
 class GDBValuePairs:
     def __init__(self, string):
-        string = string.split(",")
+        string = string.split("\",")
         self.data = {}
         for pair in string:
             if not "=" in pair:
                 continue
-            key, value = pair.split("=")
+            key, value = pair.split("=", 1)
             value = value.replace("\"", "")
             self.data[key] = value
 
@@ -197,7 +197,7 @@ def extract_stackargs(line):
     frames = line.split("level=")[1:]
     for frame in frames:
         curr = []
-        args = re.findall("name\=[^}]+", frame)
+        args = re.findall("name=\"[^\"]+\",value=\"[^\"]+\"", frame)
         for arg in args:
             curr.append(GDBValuePairs(arg))
         gdb_stackargs.append(curr)
@@ -224,10 +224,13 @@ def update(view=None):
 count = 0
 
 
-def run_cmd(cmd, block=False):
+def run_cmd(cmd, block=False, mimode=True):
     global count
-    count = count + 1
-    cmd = "%d%s\n" % (count, cmd)
+    if mimode:
+        count = count + 1
+        cmd = "%d%s\n" % (count, cmd)
+    else:
+        cmd = "%s\n\n" % cmd
     gdb_session_view.add_line(cmd)
     gdb_process.stdin.write(cmd)
     if block:
@@ -290,6 +293,8 @@ def sync_breakpoints():
                     continue
             cmd = "-break-insert %s:%d" % (file, bp)
             out = run_cmd(cmd, True)
+            if get_result(out) == "error":
+                continue
             bp = extract_breakpoints(out)[0]
             f = bp["file"]
             if not f in newbps:
@@ -415,8 +420,8 @@ class GdbLaunch(sublime_plugin.TextCommand):
         if gdb_process == None or gdb_process.poll() != None:
             os.chdir(get_setting("workingdir", "/tmp"))
             commandline = get_setting("commandline")
-            commandline.insert(1, "--interpreter=mi")
             gdb_process = subprocess.Popen(commandline, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+
             w = self.view.window()
             w.set_layout(
                 get_setting("layout",
@@ -449,6 +454,7 @@ class GdbLaunch(sublime_plugin.TextCommand):
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
 
+            run_cmd("set interpreter mi", mimode=False)
             sync_breakpoints()
             gdb_process.stdin.write("-exec-run\n")
             show_input()

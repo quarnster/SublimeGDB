@@ -5,7 +5,6 @@
     },
     {
         "command": "gdb_toggle_breakpoint",
-        "context": [{"key": "clang_supported_language"}],
         "keys": ["f9"]
     },
     {
