@@ -18,8 +18,10 @@
     "commandline":
     [
         "gdb",
+        "--interpreter=mi", // NOTE: This MUST be here for the plugin to work
         "./executable"
     ],
+    "exec_cmd": "-exec-run",
 
     "layout":
     {

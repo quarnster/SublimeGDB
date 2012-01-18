@@ -30,6 +30,7 @@ import os
 import re
 import Queue
 
+DEBUG = True
 
 breakpoints = {}
 gdb_lastresult = ""
@@ -38,6 +39,7 @@ gdb_cursor = ""
 gdb_cursor_position = 0
 
 gdb_process = None
+gdb_locals = []
 
 
 gdb_session_view = None
@@ -47,20 +49,33 @@ gdb_callstack_view = None
 result_regex = re.compile("(?<=\^)[^,]*")
 
 
+def log_debug(line):
+    if DEBUG:
+        os.system("echo \"%s\" >> /tmp/debug.txt" % line)
+
 class GDBView:
     LINE = 0
     FOLD_ALL = 1
     CLEAR = 2
+    SCROLL = 3
+    VIEWPORT_POSITION = 4
 
-    def __init__(self, name):
+    def __init__(self, name, scroll=True):
         self.queue = Queue.Queue()
         self.name = name
         self.closed = False
         self.create_view()
+        self.scroll = scroll
 
     def add_line(self, line):
         self.queue.put((GDBView.LINE, line))
         sublime.set_timeout(self.update, 0)
+
+    def scroll(self, line):
+        self.queue.put((GDBView.SCROLL, line))
+
+    def set_viewport_position(self, pos):
+        self.queue.put((GDBView.VIEWPORT_POSITION, pos))
 
     def clear(self):
         self.queue.put((GDBView.CLEAR, None))
@@ -95,6 +110,11 @@ class GDBView:
                     self.view.run_command("fold_all")
                 elif cmd == GDBView.CLEAR:
                     self.view.erase(e, sublime.Region(0, self.view.size()))
+                elif cmd == GDBView.SCROLL:
+                    self.view.show(self.view.text_point(data, 0))
+                elif cmd == GDBView.VIEWPORT_POSITION:
+                    self.view.set_viewport_position(data)
+
                 self.queue.task_done()
         except:
             # get_nowait throws an exception when there's nothing..
@@ -102,7 +122,8 @@ class GDBView:
         finally:
             self.view.end_edit(e)
             self.view.set_read_only(True)
-            self.view.show(self.view.size())
+            if self.scroll:
+                self.view.show(self.view.size())
 
 
 class GDBValuePairs:
@@ -122,6 +143,48 @@ class GDBValuePairs:
     def __str__(self):
         return "%s" % self.data
 
+class GDBVariable:
+    def __init__(self, vp):
+        self.valuepair = vp
+        self.children = []
+        self.line = 0
+        self.is_expanded = False
+
+    def expand(self):
+        self.is_expanded = True
+        if not (len(self.children) == 0 and int(self.valuepair["numchild"]) > 0):
+            return
+        line = run_cmd("-var-list-children 1 \"%s\"" % self.valuepair["name"], True)
+        children = re.split("[},|{]child=\{", line[:line.rfind("}}")+1])[1:]
+        for child in children:
+            child = GDBValuePairs(child[:-1])
+            self.children.append(GDBVariable(child))
+
+
+    def has_children(self):
+        return int(self.valuepair["numchild"]) > 0
+
+    def collapse(self):
+        self.is_expanded = False
+
+    def __str__(self):
+        return "%s %s = %s" % (self.valuepair['type'], self.valuepair['exp'], self.valuepair['value'])
+
+    def format(self, indent="", output = "", line=0):
+        icon = " "
+        if self.has_children():
+            if self.is_expanded:
+                icon = "-"
+            else:
+                icon = "+"
+        output += "%s%s%s\n" % (indent, icon, self)
+        self.line = line
+        line = line + 1
+        indent += "\t"
+        if self.is_expanded:
+            for child in self.children:
+                output, line = child.format(indent, output, line)
+        return (output, line)
 
 def variable_stuff(line, indent=""):
     line = line[line.find("value=") + 7:]
@@ -158,22 +221,43 @@ def variable_stuff(line, indent=""):
     return output
 
 
-def locals(line):
+def extract_varobjs(line):
     varobjs = line[:line.rfind("}}") + 1]
     varobjs = varobjs.split("varobj=")[1:]
-    gdb_locals_view.clear()
-
+    ret = []
     for varobj in varobjs:
         var = GDBValuePairs(varobj[1:-1])
-        gdb_locals_view.add_line("%s %s %s=(%s) %s\n" % (var["typecode"], var["type"], var["exp"], var["dynamic_type"], var["value"]))
-        """
-        try:
-            data = run_cmd("-data-evaluate-expression %s" % var["exp"], True)
-            gdb_locals_view.add_line(variable_stuff(data, "\t"))
-        except:
-            traceback.print_exc()
-        """
-    gdb_locals_view.fold_all()
+        ret.append(var)
+    return ret
+
+def update_locals_view():
+    gdb_locals_view.clear()
+    output = ""
+    line = 0
+    for local in gdb_locals:
+        output, line = local.format(line=line)
+        gdb_locals_view.add_line(output)
+
+def get_variable_at_line(line, var_list):
+    if len(var_list) == 0:
+        return None
+
+    for i in range(len(var_list)):
+        if var_list[i].line == line:
+            return var_list[i]
+        elif var_list[i].line > line:
+            return get_variable_at_line(line, var_list[i-1].children)
+    return get_variable_at_line(line, var_list[len(var_list)-1].children)
+
+
+def locals(line):
+    global gdb_locals
+    gdb_locals = []
+    loc = extract_varobjs(line)
+    for var in loc:
+        gdb_locals.append(GDBVariable(var))
+    update_locals_view()
+
 
 
 def extract_breakpoints(line):
@@ -231,6 +315,7 @@ def run_cmd(cmd, block=False, mimode=True):
         cmd = "%d%s\n" % (count, cmd)
     else:
         cmd = "%s\n\n" % cmd
+    log_debug(cmd)
     gdb_session_view.add_line(cmd)
     gdb_process.stdin.write(cmd)
     if block:
@@ -349,6 +434,7 @@ def gdboutput(pipe):
             line = pipe.readline().strip()
 
             if len(line) > 0:
+                log_debug(line)
                 gdb_session_view.add_line("%s\n" % line)
 
                 if stopped_regex.match(line) != None:
@@ -438,7 +524,7 @@ class GdbLaunch(sublime_plugin.TextCommand):
             if gdb_console_view == None or gdb_console_view.is_closed():
                 gdb_console_view = GDBView("GDB Console")
             if gdb_locals_view == None or gdb_locals_view.is_closed():
-                gdb_locals_view = GDBView("GDB Locals")
+                gdb_locals_view = GDBView("GDB Locals", False)
             if gdb_callstack_view == None or gdb_callstack_view.is_closed():
                 gdb_callstack_view = GDBView("GDB Callstack")
 
@@ -454,9 +540,8 @@ class GdbLaunch(sublime_plugin.TextCommand):
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
 
-            run_cmd("set interpreter mi", mimode=False)
             sync_breakpoints()
-            gdb_process.stdin.write("-exec-run\n")
+            run_cmd(get_setting("exec_cmd"), "-exec-run")
             show_input()
         else:
             sublime.status_message("GDB is already running!")
@@ -511,12 +596,27 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
         update(self.view)
 
 
+class GdbExpandCollapseVariable(sublime_plugin.TextCommand):
+    def run(self, edit):
+        if gdb_locals_view != None and self.view.id() == gdb_locals_view.get_view().id():
+            row, col = self.view.rowcol(self.view.sel()[0].a)
+            var = get_variable_at_line(row, gdb_locals)
+            if var and var.has_children():
+                if var.is_expanded:
+                    var.collapse()
+                else:
+                    var.expand()
+                pos = self.view.viewport_position()
+                update_locals_view()
+                gdb_locals_view.set_viewport_position(pos)
+                gdb_locals_view.update()
+
+
 class GdbEventListener(sublime_plugin.EventListener):
     def on_query_context(self, view, key, operator, operand, match_all):
-        global gdb_process
-        if key != "gdb_running":
-            return None
-        return is_running() == operand
+        if key == "gdb_running":
+            return is_running() == operand
+        return None
 
     def on_activated(self, view):
         if view.file_name() != None:
