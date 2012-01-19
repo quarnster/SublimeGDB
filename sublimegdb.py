@@ -422,7 +422,7 @@ def sync_breakpoints():
             if get_result(out) == "error":
                 continue
             bp = extract_breakpoints(out)[0]
-            f = bp["file"]
+            f = bp["fullname"] if "fullname" in bp.data else bp["file"]
             if not f in newbps:
                 newbps[f] = []
             newbps[f].append(int(bp["line"]))
