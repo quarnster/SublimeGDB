@@ -5,5 +5,6 @@
     { "command": "gdb_continue", "caption": "Continue" },
     { "command": "gdb_step_over", "caption": "Step Over" },
     { "command": "gdb_step_into", "caption": "Step Into" },
-    { "command": "gdb_step_out", "caption": "Step Out" }
+    { "command": "gdb_step_out", "caption": "Step Out" },
+    { "command": "gdb_exit", "caption": "Stop Debugging"}
 ]

@@ -13,6 +13,11 @@
         "keys": ["f5"]
     },
     {
+        "command": "gdb_exit",
+        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
+        "keys": ["ctrl+f5"]
+    },
+    {
         "command": "gdb_continue",
         "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
         "keys": ["f5"]
