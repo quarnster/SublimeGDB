@@ -150,12 +150,15 @@ class GDBValuePairs:
     def __getitem__(self, key):
         return self.data[key]
 
+    def __setitem__(self, key, value):
+        self.data[key] = value
+
     def __str__(self):
         return "%s" % self.data
 
 
 class GDBVariable:
-    def __init__(self, vp):
+    def __init__(self, vp=None):
         self.valuepair = vp
         self.children = []
         self.line = 0
@@ -253,10 +256,12 @@ def get_variable_at_line(line, var_list):
 
 def update_variables():
     global gdb_variables
+    for var in gdb_variables:
+        run_cmd("-var-delete %s" % var.get_name())
     gdb_variables = extract_varobjs(run_cmd("-stack-list-arguments 2", True))
-    loc = extract_varobjs(run_cmd("-stack-list-locals 2", True))
+    loc = extract_varnames(run_cmd("-stack-list-locals 0", True))
     for var in loc:
-        gdb_variables.append(var)
+        gdb_variables.append(create_variable(var))
     update_variables_view()
 
 
@@ -286,6 +291,29 @@ def extract_stackargs(line):
             curr.append(arg)
         gdb_stackargs.append(curr)
     return gdb_stackargs
+
+
+def extract_varnames(line):
+    if "}}" in line:
+        line = line[:line.rfind("}}")]
+    line = line.replace("\"", "").replace("{", "").replace("}", "").replace(",", " ")
+    line = line.split("name=")[1:]
+    line = [l.strip() for l in line]
+    return line
+
+
+def create_variable(exp):
+    line = run_cmd("-var-create - * %s" % exp, True)
+    line = line[line.find(",") + 1:]
+    var = GDBValuePairs(line)
+    var['exp'] = exp
+    if "value" not in var.data:
+        line = run_cmd("-var-evaluate-expression %s" % var["name"], True)
+        if get_result(line) == "done":
+            val = line[line.find("=") + 2:]
+            val = val[:val.find("\"")]
+            var['value'] = val
+    return GDBVariable(var)
 
 
 def update_view_markers(view=None):
@@ -321,7 +349,8 @@ def run_cmd(cmd, block=False, mimode=True):
     else:
         cmd = "%s\n\n" % cmd
     log_debug(cmd)
-    gdb_session_view.add_line(cmd)
+    if gdb_session_view != None:
+        gdb_session_view.add_line(cmd)
     gdb_process.stdin.write(cmd)
     if block:
         countstr = "%d^" % count
