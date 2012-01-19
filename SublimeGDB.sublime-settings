@@ -29,6 +29,10 @@
         "rows": [0.0, 0.75, 1.0],
         "cells": [[0, 0, 2, 1], [0, 1, 1, 2], [1, 1, 2, 2]]
     },
+
+    // The group used for opening files
+    "file_group": 0,
+
     "session_group": 1,
     "session_index": 0,
 

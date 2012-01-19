@@ -3,6 +3,6 @@
     {
         "button": "button1", "count": 1,
         "press_command": "drag_select",
-        "command": "gdb_expand_collapse_variable"
+        "command": "gdb_click"
     }
 ]

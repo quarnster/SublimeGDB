@@ -39,12 +39,14 @@ gdb_cursor = ""
 gdb_cursor_position = 0
 
 gdb_process = None
-gdb_locals = []
+gdb_variables = []
+gdb_stack_frames = []
+gdb_stack_index = 0
 
 
 gdb_session_view = None
 gdb_console_view = None
-gdb_locals_view = None
+gdb_variables_view = None
 gdb_callstack_view = None
 result_regex = re.compile("(?<=\^)[^,]*")
 
@@ -61,12 +63,12 @@ class GDBView:
     SCROLL = 3
     VIEWPORT_POSITION = 4
 
-    def __init__(self, name, scroll=True):
+    def __init__(self, name, s=True):
         self.queue = Queue.Queue()
         self.name = name
         self.closed = False
         self.create_view()
-        self.scroll = scroll
+        self.doScroll = s
 
     def add_line(self, line):
         self.queue.put((GDBView.LINE, line))
@@ -74,12 +76,15 @@ class GDBView:
 
     def scroll(self, line):
         self.queue.put((GDBView.SCROLL, line))
+        sublime.set_timeout(self.update, 0)
 
     def set_viewport_position(self, pos):
         self.queue.put((GDBView.VIEWPORT_POSITION, pos))
+        sublime.set_timeout(self.update, 0)
 
     def clear(self):
         self.queue.put((GDBView.CLEAR, None))
+        sublime.set_timeout(self.update, 0)
 
     def create_view(self):
         self.view = sublime.active_window().new_file()
@@ -100,30 +105,34 @@ class GDBView:
         return self.view
 
     def update(self):
-        e = self.view.begin_edit()
+
         self.view.set_read_only(False)
         try:
             while True:
                 cmd, data = self.queue.get_nowait()
                 if cmd == GDBView.LINE:
+                    e = self.view.begin_edit()
                     self.view.insert(e, self.view.size(), data)
+                    self.view.end_edit(e)
                 elif cmd == GDBView.FOLD_ALL:
                     self.view.run_command("fold_all")
                 elif cmd == GDBView.CLEAR:
+                    e = self.view.begin_edit()
                     self.view.erase(e, sublime.Region(0, self.view.size()))
+                    self.view.end_edit(e)
                 elif cmd == GDBView.SCROLL:
                     self.view.show(self.view.text_point(data, 0))
                 elif cmd == GDBView.VIEWPORT_POSITION:
-                    self.view.set_viewport_position(data)
-
+                    self.view.set_viewport_position(data, True)
                 self.queue.task_done()
-        except:
+        except Queue.Empty:
             # get_nowait throws an exception when there's nothing..
             pass
+        except:
+            traceback.print_exc()
         finally:
-            self.view.end_edit(e)
             self.view.set_read_only(True)
-            if self.scroll:
+            if self.doScroll:
                 self.view.show(self.view.size())
 
 
@@ -135,7 +144,7 @@ class GDBValuePairs:
             if not "=" in pair:
                 continue
             key, value = pair.split("=", 1)
-            value = value.replace("\"", "")
+            value = value.replace("\\\"", "'").replace("\"", "")
             self.data[key] = value
 
     def __getitem__(self, key):
@@ -202,23 +211,32 @@ class GDBVariable:
         return (output, line)
 
 
+class GDBStackFrame:
+    def __init__(self, vp):
+        self.valuepairs = vp
+        self.args = []
+
+    def __getitem__(self, key):
+        return self.valuepairs[key]
+
+
 def extract_varobjs(line):
     varobjs = line[:line.rfind("}}") + 1]
     varobjs = varobjs.split("varobj=")[1:]
     ret = []
     for varobj in varobjs:
-        var = GDBValuePairs(varobj[1:-1])
+        var = GDBVariable(GDBValuePairs(varobj[1:-1]))
         ret.append(var)
     return ret
 
 
-def update_locals_view():
-    gdb_locals_view.clear()
+def update_variables_view():
+    gdb_variables_view.clear()
     output = ""
     line = 0
-    for local in gdb_locals:
+    for local in gdb_variables:
         output, line = local.format(line=line)
-        gdb_locals_view.add_line(output)
+        gdb_variables_view.add_line(output)
 
 
 def get_variable_at_line(line, var_list):
@@ -233,13 +251,13 @@ def get_variable_at_line(line, var_list):
     return get_variable_at_line(line, var_list[len(var_list) - 1].children)
 
 
-def update_locals(line):
-    global gdb_locals
-    gdb_locals = []
-    loc = extract_varobjs(line)
+def update_variables():
+    global gdb_variables
+    gdb_variables = extract_varobjs(run_cmd("-stack-list-arguments 2", True))
+    loc = extract_varobjs(run_cmd("-stack-list-locals 2", True))
     for var in loc:
-        gdb_locals.append(GDBVariable(var))
-    update_locals_view()
+        gdb_variables.append(var)
+    update_variables_view()
 
 
 def extract_breakpoints(line):
@@ -254,7 +272,7 @@ def extract_stackframes(line):
     gdb_stackframes = []
     frames = re.findall("(?<=frame\=\{)[^}]+", line)
     for frame in frames:
-        gdb_stackframes.append(GDBValuePairs(frame))
+        gdb_stackframes.append(GDBStackFrame(GDBValuePairs(frame)))
     return gdb_stackframes
 
 
@@ -263,9 +281,9 @@ def extract_stackargs(line):
     frames = line.split("level=")[1:]
     for frame in frames:
         curr = []
-        args = re.findall("name=\"[^\"]+\",value=\"[^\"]+\"", frame)
+        args = re.findall("name=\"([^\"]+)\",value=\"([^:\"]+)", frame)
         for arg in args:
-            curr.append(GDBValuePairs(arg))
+            curr.append(arg)
         gdb_stackargs.append(curr)
     return gdb_stackargs
 
@@ -286,6 +304,11 @@ def update_view_markers(view=None):
         cursor.append(view.full_line(view.text_point(gdb_cursor_position - 1, 0)))
 
     view.add_regions("sublimegdb.position", cursor, "entity.name.class", "bookmark", sublime.HIDDEN)
+
+    if gdb_callstack_view != None:
+        view = gdb_callstack_view.get_view()
+        view.add_regions("sublimegdb.stackframe", [view.line(view.text_point(gdb_stack_index, 0))], "entity.name.class", "bookmark", sublime.HIDDEN)
+
 
 count = 0
 
@@ -378,14 +401,19 @@ def get_result(line):
 def update_cursor():
     global gdb_cursor
     global gdb_cursor_position
+    global gdb_stack_frames
+    global gdb_stack_index
     line = run_cmd("-stack-list-frames", True)
     if get_result(line) == "error":
         gdb_cursor_position = 0
         update_view_markers()
         return
-    frames = extract_stackframes(line)
-    gdb_cursor = frames[0]["fullname"]
-    gdb_cursor_position = int(frames[0]["line"])
+
+    gdb_stack_frames = frames = extract_stackframes(line)
+    currFrame = extract_stackframes(run_cmd("-stack-info-frame", True))[0]
+    gdb_stack_index = int(currFrame["level"])
+    gdb_cursor = currFrame["fullname"]
+    gdb_cursor_position = int(currFrame["line"])
 
     line = run_cmd("-stack-list-arguments 1", True)
     args = extract_stackargs(line)
@@ -393,14 +421,16 @@ def update_cursor():
     for i in range(len(frames)):
         output = "%s(" % frames[i]["func"]
         for v in args[i]:
-            output += "%s = %s, " % (v["name"], v["value"])
+            output += "%s = %s, " % v
         output += ")\n"
 
         gdb_callstack_view.add_line(output)
+    gdb_callstack_view.update()
 
+    sublime.active_window().focus_group(get_setting("file_group", 0))
     sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
     update_view_markers()
-    update_locals(run_cmd("-stack-list-locals 2", True))
+    update_variables()
 
 
 def gdboutput(pipe):
@@ -438,7 +468,7 @@ def gdboutput(pipe):
         gdb_session_view.add_line("GDB session ended\n")
     global gdb_cursor_position
     gdb_cursor_position = 0
-    sublime.set_timeout(update, 0)
+    sublime.set_timeout(update_view_markers, 0)
 
 
 def show_input():
@@ -483,7 +513,7 @@ class GdbLaunch(sublime_plugin.TextCommand):
         global gdb_process
         global gdb_session_view
         global gdb_console_view
-        global gdb_locals_view
+        global gdb_variables_view
         global gdb_callstack_view
         if gdb_process == None or gdb_process.poll() != None:
             os.chdir(get_setting("workingdir", "/tmp"))
@@ -505,19 +535,19 @@ class GdbLaunch(sublime_plugin.TextCommand):
                 gdb_session_view = GDBView("GDB Session")
             if gdb_console_view == None or gdb_console_view.is_closed():
                 gdb_console_view = GDBView("GDB Console")
-            if gdb_locals_view == None or gdb_locals_view.is_closed():
-                gdb_locals_view = GDBView("GDB Locals", False)
+            if gdb_variables_view == None or gdb_variables_view.is_closed():
+                gdb_variables_view = GDBView("GDB Variables", False)
             if gdb_callstack_view == None or gdb_callstack_view.is_closed():
                 gdb_callstack_view = GDBView("GDB Callstack")
 
             gdb_session_view.clear()
             gdb_console_view.clear()
-            gdb_locals_view.clear()
+            gdb_variables_view.clear()
             gdb_callstack_view.clear()
 
             w.set_view_index(gdb_session_view.get_view(), get_setting("session_group", 1), get_setting("session_index", 0))
             w.set_view_index(gdb_console_view.get_view(), get_setting("console_group", 1), get_setting("console_index", 1))
-            w.set_view_index(gdb_locals_view.get_view(), get_setting("locals_group", 2), get_setting("locals_index", 0))
+            w.set_view_index(gdb_variables_view.get_view(), get_setting("variables_group", 2), get_setting("variables_index", 0))
             w.set_view_index(gdb_callstack_view.get_view(), get_setting("callstack_group", 2), get_setting("callstack_index", 0))
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
@@ -602,20 +632,30 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
         update_view_markers(self.view)
 
 
-class GdbExpandCollapseVariable(sublime_plugin.TextCommand):
+class GdbClick(sublime_plugin.TextCommand):
     def run(self, edit):
-        if gdb_locals_view != None and self.view.id() == gdb_locals_view.get_view().id():
-            row, col = self.view.rowcol(self.view.sel()[0].a)
-            var = get_variable_at_line(row, gdb_locals)
+        if not is_running():
+            return
+        row, col = self.view.rowcol(self.view.sel()[0].a)
+        if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
+            var = get_variable_at_line(row, gdb_variables)
             if var and var.has_children():
                 if var.is_expanded:
                     var.collapse()
                 else:
                     var.expand()
                 pos = self.view.viewport_position()
-                update_locals_view()
-                gdb_locals_view.set_viewport_position(pos)
-                gdb_locals_view.update()
+                update_variables_view()
+                gdb_variables_view.update()
+                gdb_variables_view.set_viewport_position(pos)
+                gdb_variables_view.update()
+        elif gdb_callstack_view != None and self.view.id() == gdb_callstack_view.get_view().id():
+            if row < len(gdb_stack_frames):
+                run_cmd("-stack-select-frame %d" % row)
+                update_cursor()
+
+    def is_enabled(self):
+        return is_running()
 
 
 class GdbEventListener(sublime_plugin.EventListener):
@@ -637,7 +677,7 @@ class GdbEventListener(sublime_plugin.EventListener):
             gdb_session_view.was_closed()
         if gdb_console_view != None and view.id() == gdb_console_view.get_view().id():
             gdb_console_view.was_closed()
-        if gdb_locals_view != None and view.id() == gdb_locals_view.get_view().id():
-            gdb_locals_view.was_closed()
+        if gdb_variables_view != None and view.id() == gdb_variables_view.get_view().id():
+            gdb_variables_view.was_closed()
         if gdb_callstack_view != None and view.id() == gdb_callstack_view.get_view().id():
             gdb_callstack_view.was_closed()
