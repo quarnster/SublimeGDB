@@ -173,7 +173,9 @@ class GDBVariable:
         children = self.get_children(name)
         for child in children:
             child = GDBVariable(GDBValuePairs(child[:-1]))
-            if child.get_name().endswith(".private") or child.get_name().endswith(".protected"):
+            if child.get_name().endswith(".private") or \
+                    child.get_name().endswith(".protected") or \
+                    child.get_name().endswith(".public"):
                 if child.has_children():
                     self.add_children(child.get_name())
             else:
@@ -258,7 +260,12 @@ def update_variables():
     global gdb_variables
     for var in gdb_variables:
         run_cmd("-var-delete %s" % var.get_name())
-    gdb_variables = extract_varobjs(run_cmd("-stack-list-arguments 2", True))
+    line = run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True)
+    line = line[line.find(",", line.find("{level="))+1:]
+    args = extract_varnames(line)
+    gdb_variables = []
+    for arg in args:
+        gdb_variables.append(create_variable(arg))
     loc = extract_varnames(run_cmd("-stack-list-locals 0", True))
     for var in loc:
         gdb_variables.append(create_variable(var))
@@ -296,7 +303,7 @@ def extract_stackargs(line):
 def extract_varnames(line):
     if "}}" in line:
         line = line[:line.rfind("}}")]
-    line = line.replace("\"", "").replace("{", "").replace("}", "").replace(",", " ")
+    line = line.replace("\"", "").replace("{", "").replace("}", "").replace(",", " ").replace("]", "")
     line = line.split("name=")[1:]
     line = [l.strip() for l in line]
     return line
