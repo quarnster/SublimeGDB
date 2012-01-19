@@ -152,15 +152,29 @@ class GDBVariable:
         self.line = 0
         self.is_expanded = False
 
+    def get_children(self, name):
+        line = run_cmd("-var-list-children 1 \"%s\"" % name, True)
+        children = re.split("[, {]+child=\{", line[:line.rfind("}}")])[1:]
+        return children
+
+    def add_children(self, name):
+        children = self.get_children(name)
+        for child in children:
+            child = GDBVariable(GDBValuePairs(child[:-1]))
+            if child.get_name().endswith(".private") or child.get_name().endswith(".protected"):
+                if child.has_children():
+                    self.add_children(child.get_name())
+            else:
+                self.children.append(child)
+
+    def get_name(self):
+        return self.valuepair["name"]
+
     def expand(self):
         self.is_expanded = True
         if not (len(self.children) == 0 and int(self.valuepair["numchild"]) > 0):
             return
-        line = run_cmd("-var-list-children 1 \"%s\"" % self.valuepair["name"], True)
-        children = re.split("[},|{]child=\{", line[:line.rfind("}}") + 1])[1:]
-        for child in children:
-            child = GDBValuePairs(child[:-1])
-            self.children.append(GDBVariable(child))
+        self.add_children(self.get_name())
 
     def has_children(self):
         return int(self.valuepair["numchild"]) > 0
@@ -186,41 +200,6 @@ class GDBVariable:
             for child in self.children:
                 output, line = child.format(indent, output, line)
         return (output, line)
-
-
-def variable_stuff(line, indent=""):
-    line = line[line.find("value=") + 7:]
-    if line[0] == "{":
-        line = line[1:]
-    start = 0
-    level = 0
-    output = ""
-    for idx in range(len(line)):
-        char = line[idx]
-        if char == '{':
-            data = line[start:idx].strip()
-            output += "%s%s\n" % (indent, data)
-
-            start = idx + 1
-            indent = indent + "\t"
-        elif char == '}':
-            output += "%s%s" % (indent, line[start:idx].strip())
-            start = idx + 1
-            indent = indent[:-1]
-        elif char == "," and level == 0:
-            data = line[start:idx].strip()
-            output += "%s%s\n" % (indent, data)
-            start = idx + 1
-        elif char == "\"":
-            data = line[start:idx].strip()
-            output += "%s%s\n" % (indent, data)
-            break
-        elif char == "(" or char == "<":
-            level += 1
-        elif char == ")" or char == ">":
-            level -= 1
-
-    return output
 
 
 def extract_varobjs(line):
@@ -254,7 +233,7 @@ def get_variable_at_line(line, var_list):
     return get_variable_at_line(line, var_list[len(var_list) - 1].children)
 
 
-def locals(line):
+def update_locals(line):
     global gdb_locals
     gdb_locals = []
     loc = extract_varobjs(line)
@@ -291,7 +270,7 @@ def extract_stackargs(line):
     return gdb_stackargs
 
 
-def update(view=None):
+def update_view_markers(view=None):
     if view == None:
         view = sublime.active_window().active_view()
     bps = []
@@ -389,7 +368,7 @@ def sync_breakpoints():
                 newbps[f] = []
             newbps[f].append(int(bp["line"]))
     breakpoints = newbps
-    update()
+    update_view_markers()
 
 
 def get_result(line):
@@ -402,7 +381,7 @@ def update_cursor():
     line = run_cmd("-stack-list-frames", True)
     if get_result(line) == "error":
         gdb_cursor_position = 0
-        update()
+        update_view_markers()
         return
     frames = extract_stackframes(line)
     gdb_cursor = frames[0]["fullname"]
@@ -420,8 +399,8 @@ def update_cursor():
         gdb_callstack_view.add_line(output)
 
     sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
-    update()
-    locals(run_cmd("-stack-list-locals 2", True))
+    update_view_markers()
+    update_locals(run_cmd("-stack-list-locals 2", True))
 
 
 def gdboutput(pipe):
@@ -557,7 +536,7 @@ class GdbContinue(sublime_plugin.TextCommand):
     def run(self, edit):
         global gdb_cursor_position
         gdb_cursor_position = 0
-        update(self.view)
+        update_view_markers(self.view)
         run_cmd("-exec-continue")
 
     def is_enabled(self):
@@ -620,7 +599,7 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
 
         line, col = self.view.rowcol(self.view.sel()[0].a)
         toggle_breakpoint(fn, line + 1)
-        update(self.view)
+        update_view_markers(self.view)
 
 
 class GdbExpandCollapseVariable(sublime_plugin.TextCommand):
@@ -647,11 +626,11 @@ class GdbEventListener(sublime_plugin.EventListener):
 
     def on_activated(self, view):
         if view.file_name() != None:
-            update(view)
+            update_view_markers(view)
 
     def on_load(self, view):
         if view.file_name() != None:
-            update(view)
+            update_view_markers(view)
 
     def on_close(self, view):
         if gdb_session_view != None and view.id() == gdb_session_view.get_view().id():
