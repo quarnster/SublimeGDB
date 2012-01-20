@@ -40,6 +40,7 @@ gdb_cursor_position = 0
 
 gdb_process = None
 gdb_variables = []
+gdb_stack_frame = None
 gdb_stack_frames = []
 gdb_stack_index = 0
 
@@ -121,7 +122,7 @@ class GDBView:
                     self.view.erase(e, sublime.Region(0, self.view.size()))
                     self.view.end_edit(e)
                 elif cmd == GDBView.SCROLL:
-                    self.view.run_command("goto_line", {"line": data+1})
+                    self.view.run_command("goto_line", {"line": data + 1})
                 elif cmd == GDBView.VIEWPORT_POSITION:
                     self.view.set_viewport_position(data, True)
                 self.queue.task_done()
@@ -163,6 +164,23 @@ class GDBVariable:
         self.children = []
         self.line = 0
         self.is_expanded = False
+        if "value" not in vp.data:
+            self.update_value()
+        self.dirty = False
+
+    def update_value(self):
+        line = run_cmd("-var-evaluate-expression %s" % self["name"], True)
+        if get_result(line) == "done":
+            val = line[line.find("=") + 2:]
+            val = val[:val.find("\"")]
+            self['value'] = val
+
+    def update(self, d):
+        for key in d:
+            if key.startswith("new_"):
+                self[key[4:]] = d[key]
+            elif key == "value":
+                self[key] = d[key]
 
     def get_children(self, name):
         line = run_cmd("-var-list-children 1 \"%s\"" % name, True)
@@ -191,8 +209,18 @@ class GDBVariable:
             self.valuepair["value"] = re.search("(?<=value=\")[a-zA-Z0-9]+(?=\")", line).group(0)
             update_variables_view()
         else:
-            err = line[line.find("msg=")+4:]
+            err = line[line.find("msg=") + 4:]
             sublime.status_message("Error: %s" % err)
+
+    def find(self, name):
+        if name == self.get_name():
+            return self
+        elif self.get_name().startswith(name):
+            for child in self.children:
+                ret = child.find(name)
+                if ret != None:
+                    return ret
+        return None
 
     def edit(self):
         sublime.active_window().show_input_panel("New value", self.valuepair["value"], self.edit_on_done, None, None)
@@ -215,13 +243,26 @@ class GDBVariable:
     def __str__(self):
         return "%s %s = %s" % (self.valuepair['type'], self.valuepair['exp'], self.valuepair['value'])
 
-    def format(self, indent="", output="", line=0):
+    def __getitem__(self, key):
+        return self.valuepair[key]
+
+    def __setitem__(self, key, value):
+        self.valuepair[key] = value
+        if key == "value":
+            self.dirty = True
+
+    def format(self, indent="", output="", line=0, dirty=[]):
+        if self.dirty:
+            dirty.append(self)
+            self.dirty = False
+
         icon = " "
         if self.has_children():
             if self.is_expanded:
                 icon = "-"
             else:
                 icon = "+"
+
         output += "%s%s%s\n" % (indent, icon, self)
         self.line = line
         line = line + 1
@@ -255,9 +296,16 @@ def update_variables_view():
     gdb_variables_view.clear()
     output = ""
     line = 0
+    dirtylist = []
     for local in gdb_variables:
-        output, line = local.format(line=line)
+        output, line = local.format(line=line, dirty=dirtylist)
         gdb_variables_view.add_line(output)
+    gdb_variables_view.update()
+    regions = []
+    v = gdb_variables_view.get_view()
+    for dirty in dirtylist:
+        regions.append(v.full_line(v.text_point(dirty.line, 0)))
+    v.add_regions("sublimegdb.dirtyvariables", regions, "entity.name.class", "", sublime.DRAW_OUTLINED)
 
 
 def get_variable_at_line(line, var_list):
@@ -272,19 +320,40 @@ def get_variable_at_line(line, var_list):
     return get_variable_at_line(line, var_list[len(var_list) - 1].children)
 
 
-def update_variables():
+def update_variables(sameFrame):
     global gdb_variables
-    for var in gdb_variables:
-        run_cmd("-var-delete %s" % var.get_name())
-    line = run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True)
-    line = line[line.find(",", line.find("{level="))+1:]
-    args = extract_varnames(line)
-    gdb_variables = []
-    for arg in args:
-        gdb_variables.append(create_variable(arg))
-    loc = extract_varnames(run_cmd("-stack-list-locals 0", True))
-    for var in loc:
-        gdb_variables.append(create_variable(var))
+    if sameFrame:
+        line = run_cmd("-var-update --all-values *", True)
+        changes = re.split("},", line)
+        ret = []
+        for i in range(len(changes)):
+            change = re.findall("([^=,{}]+)=\"([^\"]+)\"", changes[i])
+            d = {}
+            for name, value in change:
+                d[name] = value
+            if "name" in d:
+                ret.append(d)
+        for value in ret:
+            name = value["name"]
+            for var in gdb_variables:
+                real = var.find(name)
+                if real != None:
+                    real.update(value)
+                    if not "value" in value and not "new_value" in value:
+                        real.update_value()
+                    break
+    else:
+        for var in gdb_variables:
+            run_cmd("-var-delete %s" % var.get_name())
+        line = run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True)
+        line = line[line.find(",", line.find("{level=")) + 1:]
+        args = extract_varnames(line)
+        gdb_variables = []
+        for arg in args:
+            gdb_variables.append(create_variable(arg))
+        loc = extract_varnames(run_cmd("-stack-list-locals 0", True))
+        for var in loc:
+            gdb_variables.append(create_variable(var))
     update_variables_view()
 
 
@@ -330,12 +399,6 @@ def create_variable(exp):
     line = line[line.find(",") + 1:]
     var = GDBValuePairs(line)
     var['exp'] = exp
-    if "value" not in var.data:
-        line = run_cmd("-var-evaluate-expression %s" % var["name"], True)
-        if get_result(line) == "done":
-            val = line[line.find("=") + 2:]
-            val = val[:val.find("\"")]
-            var['value'] = val
     return GDBVariable(var)
 
 
@@ -366,6 +429,9 @@ count = 0
 
 def run_cmd(cmd, block=False, mimode=True):
     global count
+    if not is_running():
+        return "0^error,msg=\"no session running\""
+
     if mimode:
         count = count + 1
         cmd = "%d%s\n" % (count, cmd)
@@ -455,40 +521,51 @@ def update_cursor():
     global gdb_cursor_position
     global gdb_stack_frames
     global gdb_stack_index
-    line = run_cmd("-stack-list-frames", True)
-    if get_result(line) == "error":
-        gdb_cursor_position = 0
-        update_view_markers()
-        return
+    global gdb_stack_frame
 
-    gdb_stack_frames = frames = extract_stackframes(line)
     currFrame = extract_stackframes(run_cmd("-stack-info-frame", True))[0]
     gdb_stack_index = int(currFrame["level"])
     gdb_cursor = currFrame["fullname"]
     gdb_cursor_position = int(currFrame["line"])
-
-    line = run_cmd("-stack-list-arguments 1", True)
-    args = extract_stackargs(line)
-    gdb_callstack_view.clear()
-    for i in range(len(frames)):
-        output = "%s(" % frames[i]["func"]
-        for v in args[i]:
-            output += "%s = %s, " % v
-        output += ")\n"
-
-        gdb_callstack_view.add_line(output)
-    gdb_callstack_view.update()
-
     sublime.active_window().focus_group(get_setting("file_group", 0))
     sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
+
+    sameFrame = gdb_stack_frame != None and gdb_stack_frame["fp"] == currFrame["fp"] and \
+                gdb_stack_frame["fullname"] == currFrame["fullname"] and \
+                gdb_stack_frame["func"] == currFrame["func"]
+    gdb_stack_frame = currFrame
+    if not sameFrame:
+        line = run_cmd("-stack-list-frames", True)
+        if get_result(line) == "error":
+            gdb_cursor_position = 0
+            update_view_markers()
+            return
+        gdb_stack_frames = frames = extract_stackframes(line)
+        line = run_cmd("-stack-list-arguments 1", True)
+        args = extract_stackargs(line)
+        gdb_callstack_view.clear()
+        for i in range(len(frames)):
+            output = "%s(" % frames[i]["func"]
+            for v in args[i]:
+                output += "%s = %s, " % v
+            output += ")\n"
+
+            gdb_callstack_view.add_line(output)
+        gdb_callstack_view.update()
+
     update_view_markers()
-    update_variables()
+    update_variables(sameFrame)
+
+
+def session_ended_status_message():
+    sublime.status_message("GDB session ended")
 
 
 def gdboutput(pipe):
     global gdb_process
     global gdb_lastresult
     global gdb_lastline
+    global gdb_stack_frame
     command_result_regex = re.compile("^\d+\^")
     stopped_regex = re.compile("^\d*\*stopped")
     while True:
@@ -502,7 +579,11 @@ def gdboutput(pipe):
                 gdb_session_view.add_line("%s\n" % line)
 
                 if stopped_regex.match(line) != None:
-                    sublime.set_timeout(update_cursor, 0)
+                    reason = re.search("(?<=reason=\")[a-zA-Z0-9\-]+(?=\")", line).group(0)
+                    if reason.startswith("exited"):
+                        run_cmd("-gdb-exit")
+                    else:
+                        sublime.set_timeout(update_cursor, 0)
                 if not line.startswith("(gdb)"):
                     gdb_lastline = line
                 if "BreakpointTable" in line:
@@ -518,6 +599,8 @@ def gdboutput(pipe):
             traceback.print_exc()
     if pipe == gdb_process.stdout:
         gdb_session_view.add_line("GDB session ended\n")
+        sublime.set_timeout(session_ended_status_message, 0)
+        gdb_stack_frame = None
     global gdb_cursor_position
     gdb_cursor_position = 0
     sublime.set_timeout(update_view_markers, 0)
@@ -627,7 +710,8 @@ class GdbContinue(sublime_plugin.TextCommand):
 
 class GdbExit(sublime_plugin.TextCommand):
     def run(self, edit):
-        run_cmd("-gdb-exit")
+        wait_until_stopped()
+        run_cmd("-gdb-exit", True)
 
     def is_enabled(self):
         return is_running()
@@ -786,6 +870,9 @@ class GdbEventListener(sublime_plugin.EventListener):
     def on_close(self, view):
         if gdb_session_view != None and view.id() == gdb_session_view.get_view().id():
             gdb_session_view.was_closed()
+            if is_running():
+                wait_until_stopped()
+                run_cmd("-gdb-exit", True)
         if gdb_console_view != None and view.id() == gdb_console_view.get_view().id():
             gdb_console_view.was_closed()
         if gdb_variables_view != None and view.id() == gdb_variables_view.get_view().id():
