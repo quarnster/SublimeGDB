@@ -121,7 +121,7 @@ class GDBView:
                     self.view.erase(e, sublime.Region(0, self.view.size()))
                     self.view.end_edit(e)
                 elif cmd == GDBView.SCROLL:
-                    self.view.show(self.view.text_point(data, 0))
+                    self.view.run_command("goto_line", {"line": data+1})
                 elif cmd == GDBView.VIEWPORT_POSITION:
                     self.view.set_viewport_position(data, True)
                 self.queue.task_done()
@@ -180,6 +180,22 @@ class GDBVariable:
                     self.add_children(child.get_name())
             else:
                 self.children.append(child)
+
+    def is_editable(self):
+        line = run_cmd("-var-show-attributes %s" % (self.get_name()), True)
+        return "editable" in re.findall("(?<=attr=\")[a-z]+(?=\")", line)
+
+    def edit_on_done(self, val):
+        line = run_cmd("-var-assign %s \"%s\"" % (self.get_name(), val), True)
+        if get_result(line) == "done":
+            self.valuepair["value"] = re.search("(?<=value=\")[a-zA-Z0-9]+(?=\")", line).group(0)
+            update_variables_view()
+        else:
+            err = line[line.find("msg=")+4:]
+            sublime.status_message("Error: %s" % err)
+
+    def edit(self):
+        sublime.active_window().show_input_panel("New value", self.valuepair["value"], self.edit_on_done, None, None)
 
     def get_name(self):
         return self.valuepair["name"]
@@ -668,23 +684,35 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
         update_view_markers(self.view)
 
 
+def expand_collapse_variable(view, expand=True, toggle=False):
+    row, col = view.rowcol(view.sel()[0].a)
+    if gdb_variables_view != None and view.id() == gdb_variables_view.get_view().id():
+        var = get_variable_at_line(row, gdb_variables)
+        if var and var.has_children():
+            if toggle:
+                if var.is_expanded:
+                    var.collapse()
+                else:
+                    var.expand()
+            elif expand:
+                var.expand()
+            else:
+                var.collapse()
+            pos = view.viewport_position()
+            update_variables_view()
+            gdb_variables_view.update()
+            gdb_variables_view.scroll(row)
+            gdb_variables_view.set_viewport_position(pos)
+            gdb_variables_view.update()
+
+
 class GdbClick(sublime_plugin.TextCommand):
     def run(self, edit):
         if not is_running():
             return
         row, col = self.view.rowcol(self.view.sel()[0].a)
         if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
-            var = get_variable_at_line(row, gdb_variables)
-            if var and var.has_children():
-                if var.is_expanded:
-                    var.collapse()
-                else:
-                    var.expand()
-                pos = self.view.viewport_position()
-                update_variables_view()
-                gdb_variables_view.update()
-                gdb_variables_view.set_viewport_position(pos)
-                gdb_variables_view.update()
+            expand_collapse_variable(self.view, toggle=True)
         elif gdb_callstack_view != None and self.view.id() == gdb_callstack_view.get_view().id():
             if row < len(gdb_stack_frames):
                 run_cmd("-stack-select-frame %d" % row)
@@ -694,10 +722,57 @@ class GdbClick(sublime_plugin.TextCommand):
         return is_running()
 
 
+class GdbCollapseVariable(sublime_plugin.TextCommand):
+    def run(self, edit):
+        expand_collapse_variable(self.view, expand=False)
+
+    def is_enabled(self):
+        if not is_running():
+            return False
+        row, col = self.view.rowcol(self.view.sel()[0].a)
+        if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
+            return True
+        return False
+
+
+class GdbExpandVariable(sublime_plugin.TextCommand):
+    def run(self, edit):
+        expand_collapse_variable(self.view)
+
+    def is_enabled(self):
+        if not is_running():
+            return False
+        row, col = self.view.rowcol(self.view.sel()[0].a)
+        if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
+            return True
+        return False
+
+
+class GdbEditVariable(sublime_plugin.TextCommand):
+    def run(self, edit):
+        row, col = self.view.rowcol(self.view.sel()[0].a)
+        if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
+            var = get_variable_at_line(row, gdb_variables)
+            if var.is_editable():
+                var.edit()
+            else:
+                sublime.status_message("Variable isn't editable")
+
+    def is_enabled(self):
+        if not is_running():
+            return False
+        row, col = self.view.rowcol(self.view.sel()[0].a)
+        if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
+            return True
+        return False
+
+
 class GdbEventListener(sublime_plugin.EventListener):
     def on_query_context(self, view, key, operator, operand, match_all):
         if key == "gdb_running":
             return is_running() == operand
+        elif key == "gdb_variables_view":
+            return gdb_variables_view != None and view.id() == gdb_variables_view.get_view().id()
         return None
 
     def on_activated(self, view):

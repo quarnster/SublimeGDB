@@ -1,4 +1,20 @@
 [
+
+    {
+        "command": "gdb_edit_variable",
+        "keys": ["enter"],
+        "context": [{"key": "gdb_running"}, {"key": "gdb_variables_view"}]
+    },
+    {
+        "command": "gdb_expand_variable",
+        "keys": ["right"],
+        "context": [{"key": "gdb_running"}, {"key": "gdb_variables_view"}]
+    },
+    {
+        "command": "gdb_collapse_variable",
+        "keys": ["left"],
+        "context": [{"key": "gdb_running"}, {"key": "gdb_variables_view"}]
+    },
     {
         "command": "gdb_input",
         "keys": ["shift+f5"]

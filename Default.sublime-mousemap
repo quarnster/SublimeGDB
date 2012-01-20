@@ -4,5 +4,12 @@
         "button": "button1", "count": 1,
         "press_command": "drag_select",
         "command": "gdb_click"
+    },
+
+    {
+        "button": "button1", "count": 2,
+        "press_command": "drag_select",
+        "press_args": {"by": "words"},
+        "command": "gdb_edit_variable"
     }
 ]
