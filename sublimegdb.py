@@ -534,14 +534,16 @@ def wait_until_stopped():
                 i = i + 1
                 time.sleep(0.1)
             if i >= 100:
-                raise ValueError("I'm confused... I think status is %s" % gdb_run_status)
+                print "I'm confused... I think status is %s, but it seems it wasn't..." % gdb_run_status
+                return False
             return True
     return False
 
 
 def resume():
     global gdb_run_status
-    gdb_run_status = get_result(run_cmd("-exec-continue", True))
+    gdb_run_status = "running"
+    run_cmd("-exec-continue", True)
 
 
 def add_breakpoint(filename, line):
@@ -764,11 +766,11 @@ class GdbLaunch(sublime_plugin.TextCommand):
             gdb_console_view.clear()
             gdb_variables_view.clear()
             gdb_callstack_view.clear()
-
-            w.set_view_index(gdb_session_view.get_view(), session_group, get_setting("session_index", 0))
-            w.set_view_index(gdb_console_view.get_view(), console_group, get_setting("console_index", 1))
-            w.set_view_index(gdb_variables_view.get_view(), variables_group, get_setting("variables_index", 2))
-            w.set_view_index(gdb_callstack_view.get_view(), callstack_group, get_setting("callstack_index", 0))
+            # setting the view index keeps crashing my Linux...
+            #w.set_view_index(gdb_session_view.get_view(), session_group, get_setting("session_index", 0))
+            #w.set_view_index(gdb_console_view.get_view(), console_group, get_setting("console_index", 1))
+            #w.set_view_index(gdb_variables_view.get_view(), variables_group, get_setting("variables_index", 2))
+            #w.set_view_index(gdb_callstack_view.get_view(), callstack_group, get_setting("callstack_index", 0))
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
             try:
