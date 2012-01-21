@@ -30,7 +30,8 @@ import os
 import re
 import Queue
 
-DEBUG = True
+DEBUG = get_setting("debug", False)
+DEBUG_FILE = get_setting("debug_file", "/tmp/sublimegdb.txt")
 
 breakpoints = {}
 gdb_lastresult = ""
@@ -54,7 +55,7 @@ result_regex = re.compile("(?<=\^)[^,]*")
 
 def log_debug(line):
     if DEBUG:
-        os.system("echo \"%s\" >> /tmp/debug.txt" % line)
+        os.system("echo \"%s\" >> \"%s\"" % (line, DEBUG_FILE)
 
 
 class GDBView:
