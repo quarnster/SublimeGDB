@@ -30,6 +30,16 @@ import os
 import re
 import Queue
 
+
+def get_setting(key, default=None):
+    try:
+        s = sublime.active_window().active_view().settings()
+        if s.has("sublimegdb_%s" % key):
+            return s.get("sublimegdb_%s" % key)
+    except:
+        pass
+    return sublime.load_settings("SublimeGDB.sublime-settings").get(key, default)
+
 DEBUG = get_setting("debug", False)
 DEBUG_FILE = get_setting("debug_file", "/tmp/sublimegdb.txt")
 
@@ -281,7 +291,6 @@ class GDBVariable:
                     dirt = True
                     break
         return dirt
-
 
     def format(self, indent="", output="", line=0, dirty=[]):
         icon = " "
@@ -699,16 +708,6 @@ def input_on_cancel():
 
 def input_on_change(s):
     pass
-
-
-def get_setting(key, default=None):
-    try:
-        s = sublime.active_window().active_view().settings()
-        if s.has("sublimegdb_%s" % key):
-            return s.get("sublimegdb_%s" % key)
-    except:
-        pass
-    return sublime.load_settings("SublimeGDB.sublime-settings").get(key, default)
 
 
 def is_running():
