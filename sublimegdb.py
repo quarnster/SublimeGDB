@@ -743,14 +743,22 @@ class GdbLaunch(sublime_plugin.TextCommand):
                     }
                 )
             )
+            session_group = get_setting("session_group", 1)
+            console_group = get_setting("console_group", 1)
+            variables_group = get_setting("variables_group", 1)
+            callstack_group = get_setting("callstack_group", 2)
 
             if gdb_session_view == None or gdb_session_view.is_closed():
+                w.focus_group(session_group)
                 gdb_session_view = GDBView("GDB Session")
             if gdb_console_view == None or gdb_console_view.is_closed():
+                w.focus_group(console_group)
                 gdb_console_view = GDBView("GDB Console")
             if gdb_variables_view == None or gdb_variables_view.is_closed():
+                w.focus_group(variables_group)
                 gdb_variables_view = GDBView("GDB Variables", False)
             if gdb_callstack_view == None or gdb_callstack_view.is_closed():
+                w.focus_group(callstack_group)
                 gdb_callstack_view = GDBView("GDB Callstack")
 
             gdb_session_view.clear()
@@ -758,10 +766,10 @@ class GdbLaunch(sublime_plugin.TextCommand):
             gdb_variables_view.clear()
             gdb_callstack_view.clear()
 
-            w.set_view_index(gdb_session_view.get_view(), get_setting("session_group", 1), get_setting("session_index", 0))
-            w.set_view_index(gdb_console_view.get_view(), get_setting("console_group", 1), get_setting("console_index", 1))
-            w.set_view_index(gdb_variables_view.get_view(), get_setting("variables_group", 1), get_setting("variables_index", 2))
-            w.set_view_index(gdb_callstack_view.get_view(), get_setting("callstack_group", 2), get_setting("callstack_index", 0))
+            w.set_view_index(gdb_session_view.get_view(), session_group, get_setting("session_index", 0))
+            w.set_view_index(gdb_console_view.get_view(), console_group, get_setting("console_index", 1))
+            w.set_view_index(gdb_variables_view.get_view(), variables_group, get_setting("variables_index", 2))
+            w.set_view_index(gdb_callstack_view.get_view(), callstack_group, get_setting("callstack_index", 0))
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
             try:
