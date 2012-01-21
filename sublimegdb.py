@@ -667,10 +667,10 @@ def gdboutput(pipe):
                 run_status = run_status_regex.match(line)
                 if run_status != None:
                     gdb_run_status = run_status.group(2)
-                    reason = re.search("(?<=reason=\")[a-zA-Z0-9\-]+(?=\")", line).group(0)
-                    if reason.startswith("exited"):
+                    reason = re.search("(?<=reason=\")[a-zA-Z0-9\-]+(?=\")", line)
+                    if reason != None and reason.group(0).startswith("exited"):
                         run_cmd("-gdb-exit")
-                    else:
+                    elif not "running" in gdb_run_status:
                         sublime.set_timeout(update_cursor, 0)
                 if not line.startswith("(gdb)"):
                     gdb_lastline = line
@@ -787,7 +787,8 @@ It seems you're not running gdb with the "mi" interpreter. Please add
             run_cmd("-gdb-set non-stop on")
 
             sync_breakpoints()
-            gdb_run_status = get_result(run_cmd(get_setting("exec_cmd"), "-exec-run", True))
+            gdb_run_status = "running"
+            run_cmd(get_setting("exec_cmd"), "-exec-run", True)
             show_input()
         else:
             sublime.status_message("GDB is already running!")
