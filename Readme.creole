@@ -19,6 +19,7 @@ In short:
 * Click on the appropriate line in the GDB Callstack view to go to that stack frame
 * Click a variable in the GDB Variables view to show its children (if available)
 * Double click a variable in the GDB Variables view to modify its value
+* You can also access some commands by right clicking in any view
 
 === License ===
 This plugin is using the zlib license
