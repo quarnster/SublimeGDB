@@ -229,7 +229,7 @@ class GDBVariable:
             return None
         if name == self.get_name():
             return self
-        elif self.get_name().startswith(name):
+        elif name.startswith(self.get_name()):
             for child in self.children:
                 ret = child.find(name)
                 if ret != None:
@@ -268,11 +268,22 @@ class GDBVariable:
         if key == "value":
             self.dirty = True
 
-    def format(self, indent="", output="", line=0, dirty=[]):
-        if self.dirty:
-            dirty.append(self)
-            self.dirty = False
+    def clear_dirty(self):
+        self.dirty = False
+        for child in self.children:
+            child.clear_dirty()
 
+    def is_dirty(self):
+        dirt = self.dirty
+        if not dirt and not self.is_expanded:
+            for child in self.children:
+                if child.is_dirty():
+                    dirt = True
+                    break
+        return dirt
+
+
+    def format(self, indent="", output="", line=0, dirty=[]):
         icon = " "
         if self.has_children():
             if self.is_expanded:
@@ -286,7 +297,9 @@ class GDBVariable:
         indent += "\t"
         if self.is_expanded:
             for child in self.children:
-                output, line = child.format(indent, output, line)
+                output, line = child.format(indent, output, line, dirty)
+        if self.is_dirty():
+            dirty.append(self)
         return (output, line)
 
 
@@ -343,6 +356,8 @@ def get_variable_at_line(line, var_list):
 def update_variables(sameFrame):
     global gdb_variables
     if sameFrame:
+        for var in gdb_variables:
+            var.clear_dirty()
         line = run_cmd("-var-update --all-values *", True)
         valuepairs = re.findall("([^=,{}]+)=\"([^\"]+)\"", line)
         ret = []
@@ -353,7 +368,7 @@ def update_variables(sameFrame):
                 ret.append(curr)
                 curr = {}
             curr[name] = value
-        if len(curr) > 0:
+        if len(curr) > 0 and "name" in curr:
             ret.append(curr)
         dellist = []
         for value in ret:
@@ -402,7 +417,6 @@ def extract_breakpoints(line):
     gdb_breakpoints = []
     bps = re.findall("(?<=bkpt\=\{)[^}]+", line)
     for bp in bps:
-        print bp
         gdb_breakpoints.append(GDBValuePairs(bp))
     return gdb_breakpoints
 
