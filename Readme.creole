@@ -3,6 +3,18 @@ GDB plugin for Sublime Text 2. Pull requests are more than welcome.
 
 This is still quite early so if you have any [[https://github.com/quarnster/SublimeGDB/issues?sort=created&direction=desc&state=open|issues or feature requests]], please let me know.
 
+=== Installation ===
+    # The easiest way to install SublimeGDB is via the excellent Package Control Plugin
+    ## See http://wbond.net/sublime_packages/package_control/installation
+    ### Once package control has been installed, bring up the command palette (cmd+shift+P or ctrl+shift+P)
+    ### Type Install and select "Package Control: Install Package"
+    ### Select SublimeGDB from the list. Package Control will keep it automatically updated for you
+    ## If you don't want to use package control, you can manually install it
+    ### Go to your packages directory and type:
+    ####        git clone https://github.com/quarnster/SublimeGDB SublimeGDB
+    # Back in the editor, open up the command palette by pressing cmd+shift+P or ctrl+shift+P
+    # Type SublimeGDB and open up the settings file you want to modify
+
 === Usage ===
 
 See [[https://github.com/quarnster/SublimeGDB/blob/master/Default.sublime-keymap|the default key bindings]] and [[https://github.com/quarnster/SublimeGDB/blob/master/Default.sublime-mousemap|the default mouse map]].
