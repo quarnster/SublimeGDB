@@ -55,7 +55,7 @@ result_regex = re.compile("(?<=\^)[^,]*")
 
 def log_debug(line):
     if DEBUG:
-        os.system("echo \"%s\" >> \"%s\"" % (line, DEBUG_FILE)
+        os.system("echo \"%s\" >> \"%s\"" % (line, DEBUG_FILE))
 
 
 class GDBView:
