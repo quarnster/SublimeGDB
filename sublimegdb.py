@@ -265,7 +265,10 @@ class GDBVariable:
         self.is_expanded = False
 
     def __str__(self):
-        return "%s %s = %s" % (self.valuepair['type'], self.valuepair['exp'], self.valuepair['value'])
+        if not "dynamic_type" in self or len(self['dynamic_type']) == 0 or self['dynamic_type'] == self['type']:
+            return "%s %s = %s" % (self['type'], self['exp'], self['value'])
+        else:
+            return "%s %s = (%s) %s" % (self['type'], self['exp'], self['dynamic_type'], self['value'])
 
     def __iter__(self):
         return self.valuepair.__iter__()
