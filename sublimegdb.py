@@ -148,6 +148,9 @@ class GDBValuePairs:
             value = value.replace("\\\"", "'").replace("\"", "")
             self.data[key] = value
 
+    def __iter__(self):
+        return self.data.__iter__()
+
     def __getitem__(self, key):
         return self.data[key]
 
@@ -164,7 +167,7 @@ class GDBVariable:
         self.children = []
         self.line = 0
         self.is_expanded = False
-        if "value" not in vp.data:
+        if "value" not in vp:
             self.update_value()
         self.dirty = False
         self.deleted = False
@@ -183,7 +186,10 @@ class GDBVariable:
     def update(self, d):
         for key in d:
             if key.startswith("new_"):
-                self[key[4:]] = d[key]
+                if key == "new_num_children":
+                    self["numchild"] = d[key]
+                else:
+                    self[key[4:]] = d[key]
             elif key == "value":
                 self[key] = d[key]
 
@@ -250,6 +256,9 @@ class GDBVariable:
     def __str__(self):
         return "%s %s = %s" % (self.valuepair['type'], self.valuepair['exp'], self.valuepair['value'])
 
+    def __iter__(self):
+        return self.valuepair.__iter__()
+
     def __getitem__(self, key):
         return self.valuepair[key]
 
@@ -312,7 +321,10 @@ def update_variables_view():
     v = gdb_variables_view.get_view()
     for dirty in dirtylist:
         regions.append(v.full_line(v.text_point(dirty.line, 0)))
-    v.add_regions("sublimegdb.dirtyvariables", regions, "entity.name.class", "", sublime.DRAW_OUTLINED)
+    v.add_regions("sublimegdb.dirtyvariables", regions,
+                    get_setting("changed_variable_scope", "entity.name.class"),
+                    get_setting("changed_variable_icon", ""),
+                    sublime.DRAW_OUTLINED)
 
 
 def get_variable_at_line(line, var_list):
@@ -440,17 +452,24 @@ def update_view_markers(view=None):
         for line in breakpoints[fn]:
             if not (line == gdb_cursor_position and fn == gdb_cursor):
                 bps.append(view.full_line(view.text_point(line - 1, 0)))
-    view.add_regions("sublimegdb.breakpoints", bps, "keyword.gdb", "circle", sublime.HIDDEN)
+    view.add_regions("sublimegdb.breakpoints", bps,
+                        get_setting("breakpoint_scope", "keyword.gdb"),
+                        get_setting("breakpoint_icon", "circle"),
+                        sublime.HIDDEN)
     cursor = []
 
     if fn == gdb_cursor and gdb_cursor_position != 0:
         cursor.append(view.full_line(view.text_point(gdb_cursor_position - 1, 0)))
 
-    view.add_regions("sublimegdb.position", cursor, "entity.name.class", "bookmark", sublime.HIDDEN)
+    pos_scope = get_setting("position_scope", "entity.name.class")
+    pos_icon = get_setting("position_icon", "bookmark")
+    view.add_regions("sublimegdb.position", cursor, pos_scope, pos_icon, sublime.HIDDEN)
 
     if gdb_callstack_view != None:
         view = gdb_callstack_view.get_view()
-        view.add_regions("sublimegdb.stackframe", [view.line(view.text_point(gdb_stack_index, 0))], "entity.name.class", "bookmark", sublime.HIDDEN)
+        view.add_regions("sublimegdb.stackframe",
+                            [view.line(view.text_point(gdb_stack_index, 0))],
+                            pos_scope, pos_icon, sublime.HIDDEN)
 
 
 count = 0
@@ -472,8 +491,12 @@ def run_cmd(cmd, block=False, mimode=True):
     gdb_process.stdin.write(cmd)
     if block:
         countstr = "%d^" % count
-        while not gdb_lastresult.startswith(countstr):
+        i = 0
+        while not gdb_lastresult.startswith(countstr) and i < 100:
+            i += 1
             time.sleep(0.1)
+        if i >= 100:
+            raise ValueError("Command \"%s\" took longer than 10 seconds to perform?" % cmd)
         return gdb_lastresult
     return count
 
@@ -512,7 +535,7 @@ def remove_breakpoint(filename, line):
         res = wait_until_stopped()
         gdb_breakpoints = extract_breakpoints(run_cmd("-break-list", True))
         for bp in gdb_breakpoints:
-            fn = bp.data["fullname"] if "fullname" in bp.data else bp.data["file"]
+            fn = bp.data["fullname"] if "fullname" in bp else bp.data["file"]
             if fn == filename and bp.data["line"] == str(line):
                 run_cmd("-break-delete %s" % bp.data["number"])
                 break
@@ -540,7 +563,7 @@ def sync_breakpoints():
             if get_result(out) == "error":
                 continue
             bp = extract_breakpoints(out)[0]
-            f = bp["fullname"] if "fullname" in bp.data else bp["file"]
+            f = bp["fullname"] if "fullname" in bp else bp["file"]
             if not f in newbps:
                 newbps[f] = []
             newbps[f].append(int(bp["line"]))
@@ -722,10 +745,19 @@ class GdbLaunch(sublime_plugin.TextCommand):
 
             w.set_view_index(gdb_session_view.get_view(), get_setting("session_group", 1), get_setting("session_index", 0))
             w.set_view_index(gdb_console_view.get_view(), get_setting("console_group", 1), get_setting("console_index", 1))
-            w.set_view_index(gdb_variables_view.get_view(), get_setting("variables_group", 2), get_setting("variables_index", 0))
+            w.set_view_index(gdb_variables_view.get_view(), get_setting("variables_group", 1), get_setting("variables_index", 2))
             w.set_view_index(gdb_callstack_view.get_view(), get_setting("callstack_group", 2), get_setting("callstack_index", 0))
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
+            try:
+                run_cmd("-gdb-show interpreter", True)
+            except:
+                sublime.error_message("""\
+It seems you're not running gdb with the "mi" interpreter. Please add
+"--interpreter=mi" to your gdb command line""")
+                gdb_process.stdin.write("quit\n")
+                return
+
             run_cmd("-gdb-set target-async 1")
             run_cmd("-gdb-set pagination off")
             run_cmd("-gdb-set non-stop on")

@@ -9,6 +9,7 @@
     //      "sublimegdb_commandline":
     //      [
     //          "gdb",
+    //          "--interpreter=mi", // NOTE: This MUST be here for the plugin to work
     //          "./your_executable_name"
     //      ]
     // }
@@ -30,6 +31,14 @@
         "cells": [[0, 0, 2, 1], [0, 1, 1, 2], [1, 1, 2, 2]]
     },
 
+    // visual stuff
+    "breakpoint_scope": "keyword.gdb",
+    "breakpoint_icon": "circle",
+    "position_scope": "entity.name.class",
+    "position_icon": "bookmark",
+    "changed_variable_scope": "entity.name.class",
+    "changed_variable_icon": "",
+
     // The group used for opening files
     "file_group": 0,
 
@@ -39,9 +48,9 @@
     "console_group": 1,
     "console_index": 1,
 
-    "locals_group": 2,
-    "locals_index": 0,
+    "variables_group": 1,
+    "variables_index": 2,
 
     "callstack_group": 2,
-    "callstack_index": 1
+    "callstack_index": 0
 }

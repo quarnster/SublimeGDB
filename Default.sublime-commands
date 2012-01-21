@@ -1,0 +1,16 @@
+[
+    {
+        "caption": "Preferences: SublimeGDB Settings – Default",
+        "command": "open_file", "args":
+        {
+            "file": "${packages}/SublimeGDB/SublimeGDB.sublime-settings"
+        }
+    },
+    {
+        "caption": "Preferences: SublimeGDB Settings – User",
+        "command": "open_file", "args":
+        {
+            "file": "${packages}/User/SublimeGDB.sublime-settings"
+        }
+    }
+]
