@@ -206,7 +206,7 @@ class GDBVariable:
 
     def get_children(self, name):
         line = run_cmd("-var-list-children 1 \"%s\"" % name, True)
-        children = re.split("[, {]+child=\{", line[:line.rfind("}}")])[1:]
+        children = re.split("[\[, {]+child=\{", line[:line.rfind("}}")])[1:]
         return children
 
     def add_children(self, name):
