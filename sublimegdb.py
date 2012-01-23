@@ -550,12 +550,12 @@ def resume():
 
 
 def add_breakpoint(filename, line):
-    breakpoints[filename].append(line)
     if is_running():
         res = wait_until_stopped()
-        run_cmd("-break-insert %s:%d" % (filename, line))
+        line = int(extract_breakpoints(run_cmd("-break-insert %s:%d" % (filename, line), True))[0]["line"])
         if res:
             resume()
+    breakpoints[filename].append(line)
 
 
 def remove_breakpoint(filename, line):
