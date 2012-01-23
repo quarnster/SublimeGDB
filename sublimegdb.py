@@ -799,6 +799,9 @@ It seems you're not running gdb with the "mi" interpreter. Please add
     def is_enabled(self):
         return not is_running()
 
+    def is_visible(self):
+        return not is_running()
+
 
 class GdbContinue(sublime_plugin.TextCommand):
     def run(self, edit):
@@ -808,6 +811,9 @@ class GdbContinue(sublime_plugin.TextCommand):
         resume()
 
     def is_enabled(self):
+        return is_running() and gdb_run_status != "running"
+
+    def is_visible(self):
         return is_running()
 
 
@@ -819,6 +825,9 @@ class GdbExit(sublime_plugin.TextCommand):
     def is_enabled(self):
         return is_running()
 
+    def is_visible(self):
+        return is_running()
+
 
 class GdbPause(sublime_plugin.TextCommand):
     def run(self, edit):
@@ -827,12 +836,18 @@ class GdbPause(sublime_plugin.TextCommand):
     def is_enabled(self):
         return is_running()
 
+    def is_visible(self):
+        return is_running()
+
 
 class GdbStepOver(sublime_plugin.TextCommand):
     def run(self, edit):
         run_cmd("-exec-next")
 
     def is_enabled(self):
+        return is_running() and gdb_run_status != "running"
+
+    def is_visible(self):
         return is_running()
 
 
@@ -841,6 +856,9 @@ class GdbStepInto(sublime_plugin.TextCommand):
         run_cmd("-exec-step")
 
     def is_enabled(self):
+        return is_running() and gdb_run_status != "running"
+
+    def is_visible(self):
         return is_running()
 
 
@@ -849,6 +867,9 @@ class GdbNextInstruction(sublime_plugin.TextCommand):
         run_cmd("-exec-next-instruction")
 
     def is_enabled(self):
+        return is_running() and gdb_run_status != "running"
+
+    def is_visible(self):
         return is_running()
 
 
@@ -857,6 +878,9 @@ class GdbStepOut(sublime_plugin.TextCommand):
         run_cmd("-exec-finish")
 
     def is_enabled(self):
+        return is_running() and gdb_run_status != "running"
+
+    def is_visible(self):
         return is_running()
 
 
@@ -897,6 +921,7 @@ class GdbClick(sublime_plugin.TextCommand):
     def run(self, edit):
         if not is_running():
             return
+
         row, col = self.view.rowcol(self.view.sel()[0].a)
         if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
             expand_collapse_variable(self.view, toggle=True)
