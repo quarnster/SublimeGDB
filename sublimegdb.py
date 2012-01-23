@@ -277,7 +277,7 @@ class GDBVariable:
         output += "%s%s%s\n" % (indent, icon, self)
         self.line = line
         line = line + 1
-        indent += "\t"
+        indent += "    "
         if self.is_expanded:
             for child in self.children:
                 output, line = child.format(indent, output, line, dirty)
@@ -324,6 +324,7 @@ def extract_varnames(res):
         if "name" in res[0]:
             return [x["name"] for x in res]
     return []
+
 
 def update_variables(sameFrame):
     global gdb_variables
@@ -522,10 +523,12 @@ def sync_breakpoints():
 def get_result(line):
     return result_regex.search(line).group(0)
 
+
 def listify(var):
     if not type(var) is ListType:
         return [var]
     return var
+
 
 def update_cursor():
     global gdb_cursor
