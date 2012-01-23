@@ -29,6 +29,8 @@ import traceback
 import os
 import re
 import Queue
+from resultparser import parse_result_line
+from types import ListType
 
 
 def get_setting(key, default=None):
@@ -148,30 +150,6 @@ class GDBView:
                 self.view.show(self.view.size())
 
 
-class GDBValuePairs:
-    def __init__(self, string):
-        string = string.split("\",")
-        self.data = {}
-        for pair in string:
-            if not "=" in pair:
-                continue
-            key, value = pair.split("=", 1)
-            value = value.replace("\\\"", "'").replace("\"", "")
-            self.data[key] = value
-
-    def __iter__(self):
-        return self.data.__iter__()
-
-    def __getitem__(self, key):
-        return self.data[key]
-
-    def __setitem__(self, key, value):
-        self.data[key] = value
-
-    def __str__(self):
-        return "%s" % self.data
-
-
 class GDBVariable:
     def __init__(self, vp=None):
         self.valuepair = vp
@@ -190,9 +168,7 @@ class GDBVariable:
     def update_value(self):
         line = run_cmd("-var-evaluate-expression %s" % self["name"], True)
         if get_result(line) == "done":
-            val = line[line.find("=") + 2:]
-            val = val[:val.find("\"")]
-            self['value'] = val
+            self['value'] = parse_result_line(line)["value"]
 
     def update(self, d):
         for key in d:
@@ -204,15 +180,10 @@ class GDBVariable:
             elif key == "value":
                 self[key] = d[key]
 
-    def get_children(self, name):
-        line = run_cmd("-var-list-children 1 \"%s\"" % name, True)
-        children = re.split("[\[, {]+child=\{", line[:line.rfind("}}")])[1:]
-        return children
-
     def add_children(self, name):
-        children = self.get_children(name)
+        children = listify(parse_result_line(run_cmd("-var-list-children 1 \"%s\"" % name, True))["children"]["child"])
         for child in children:
-            child = GDBVariable(GDBValuePairs(child[:-1]))
+            child = GDBVariable(child)
             if child.get_name().endswith(".private") or \
                     child.get_name().endswith(".protected") or \
                     child.get_name().endswith(".public"):
@@ -228,7 +199,7 @@ class GDBVariable:
     def edit_on_done(self, val):
         line = run_cmd("-var-assign %s \"%s\"" % (self.get_name(), val), True)
         if get_result(line) == "done":
-            self.valuepair["value"] = re.search("(?<=value=\")[a-zA-Z0-9]+(?=\")", line).group(0)
+            self.valuepair["value"] = parse_result_line(line)["value"]
             update_variables_view()
         else:
             err = line[line.find("msg=") + 4:]
@@ -315,25 +286,6 @@ class GDBVariable:
         return (output, line)
 
 
-class GDBStackFrame:
-    def __init__(self, vp):
-        self.valuepairs = vp
-        self.args = []
-
-    def __getitem__(self, key):
-        return self.valuepairs[key]
-
-
-def extract_varobjs(line):
-    varobjs = line[:line.rfind("}}") + 1]
-    varobjs = varobjs.split("varobj=")[1:]
-    ret = []
-    for varobj in varobjs:
-        var = GDBVariable(GDBValuePairs(varobj[1:-1]))
-        ret.append(var)
-    return ret
-
-
 def update_variables_view():
     gdb_variables_view.clear()
     output = ""
@@ -365,23 +317,22 @@ def get_variable_at_line(line, var_list):
     return get_variable_at_line(line, var_list[len(var_list) - 1].children)
 
 
+def extract_varnames(res):
+    if "name" in res:
+        return listify(res["name"])
+    elif len(res) > 0 and type(res) is ListType:
+        if "name" in res[0]:
+            return [x["name"] for x in res]
+    return []
+
 def update_variables(sameFrame):
     global gdb_variables
     if sameFrame:
         for var in gdb_variables:
             var.clear_dirty()
-        line = run_cmd("-var-update --all-values *", True)
-        valuepairs = re.findall("([^=,{}]+)=\"([^\"]+)\"", line)
-        ret = []
-        curr = {}
-        for i in range(len(valuepairs)):
-            name, value = valuepairs[i]
-            if name == "name" and len(curr) > 0:
-                ret.append(curr)
-                curr = {}
-            curr[name] = value
-        if len(curr) > 0 and "name" in curr:
-            ret.append(curr)
+        ret = parse_result_line(run_cmd("-var-update --all-values *", True))["changelist"]
+        if "varobj" in ret:
+            ret = listify(ret["varobj"])
         dellist = []
         for value in ret:
             name = value["name"]
@@ -399,7 +350,7 @@ def update_variables(sameFrame):
         for item in dellist:
             gdb_variables.remove(item)
 
-        loc = extract_varnames(run_cmd("-stack-list-locals 0", True))
+        loc = extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
         tracked = []
         for var in loc:
             create = True
@@ -413,59 +364,27 @@ def update_variables(sameFrame):
     else:
         for var in gdb_variables:
             var.delete()
-        line = run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True)
-        line = line[line.find(",", line.find("{level=")) + 1:]
-        args = extract_varnames(line)
+        args = extract_varnames(parse_result_line(run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True))["stack-args"]["frame"]["args"])
         gdb_variables = []
         for arg in args:
             gdb_variables.append(create_variable(arg))
-        loc = extract_varnames(run_cmd("-stack-list-locals 0", True))
+        loc = extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
         for var in loc:
             gdb_variables.append(create_variable(var))
     update_variables_view()
 
 
 def extract_breakpoints(line):
-    gdb_breakpoints = []
-    bps = re.findall("(?<=bkpt\=\{)[^}]+", line)
-    for bp in bps:
-        gdb_breakpoints.append(GDBValuePairs(bp))
-    return gdb_breakpoints
-
-
-def extract_stackframes(line):
-    gdb_stackframes = []
-    frames = re.findall("(?<=frame\=\{)[^}]+", line)
-    for frame in frames:
-        gdb_stackframes.append(GDBStackFrame(GDBValuePairs(frame)))
-    return gdb_stackframes
-
-
-def extract_stackargs(line):
-    gdb_stackargs = []
-    frames = line.split("level=")[1:]
-    for frame in frames:
-        curr = []
-        args = re.findall("name=\"([^\"]+)\",value=\"([^:\"]+)", frame)
-        for arg in args:
-            curr.append(arg)
-        gdb_stackargs.append(curr)
-    return gdb_stackargs
-
-
-def extract_varnames(line):
-    if "}}" in line:
-        line = line[:line.rfind("}}")]
-    line = line.replace("\"", "").replace("{", "").replace("}", "").replace(",", " ").replace("]", "")
-    line = line.split("name=")[1:]
-    line = [l.strip() for l in line]
-    return line
+    res = parse_result_line(line)
+    if "bkpt" in res["BreakpointTable"]:
+        return res["BreakpointTable"]["bkpt"]
+    else:
+        return res["BreakpointTable"]["body"]["bkpt"]
 
 
 def create_variable(exp):
     line = run_cmd("-var-create - * %s" % exp, True)
-    line = line[line.find(",") + 1:]
-    var = GDBValuePairs(line)
+    var = parse_result_line(line)
     var['exp'] = exp
     return GDBVariable(var)
 
@@ -552,7 +471,7 @@ def resume():
 def add_breakpoint(filename, line):
     if is_running():
         res = wait_until_stopped()
-        line = int(extract_breakpoints(run_cmd("-break-insert %s:%d" % (filename, line), True))[0]["line"])
+        line = int(parse_result_line(run_cmd("-break-insert %s:%d" % (filename, line), True))["bkpt"]["line"])
         if res:
             resume()
     breakpoints[filename].append(line)
@@ -564,9 +483,9 @@ def remove_breakpoint(filename, line):
         res = wait_until_stopped()
         gdb_breakpoints = extract_breakpoints(run_cmd("-break-list", True))
         for bp in gdb_breakpoints:
-            fn = bp.data["fullname"] if "fullname" in bp else bp.data["file"]
-            if fn == filename and bp.data["line"] == str(line):
-                run_cmd("-break-delete %s" % bp.data["number"])
+            fn = bp["fullname"] if "fullname" in bp else bp["file"]
+            if fn == filename and bp["line"] == str(line):
+                run_cmd("-break-delete %s" % bp["number"])
                 break
         if res:
             resume()
@@ -591,7 +510,7 @@ def sync_breakpoints():
             out = run_cmd(cmd, True)
             if get_result(out) == "error":
                 continue
-            bp = extract_breakpoints(out)[0]
+            bp = parse_result_line(out)["bkpt"]
             f = bp["fullname"] if "fullname" in bp else bp["file"]
             if not f in newbps:
                 newbps[f] = []
@@ -603,6 +522,10 @@ def sync_breakpoints():
 def get_result(line):
     return result_regex.search(line).group(0)
 
+def listify(var):
+    if not type(var) is ListType:
+        return [var]
+    return var
 
 def update_cursor():
     global gdb_cursor
@@ -611,7 +534,7 @@ def update_cursor():
     global gdb_stack_index
     global gdb_stack_frame
 
-    currFrame = extract_stackframes(run_cmd("-stack-info-frame", True))[0]
+    currFrame = parse_result_line(run_cmd("-stack-info-frame", True))["frame"]
     gdb_stack_index = int(currFrame["level"])
     gdb_cursor = currFrame["fullname"]
     gdb_cursor_position = int(currFrame["line"])
@@ -628,14 +551,13 @@ def update_cursor():
             gdb_cursor_position = 0
             update_view_markers()
             return
-        gdb_stack_frames = frames = extract_stackframes(line)
-        line = run_cmd("-stack-list-arguments 1", True)
-        args = extract_stackargs(line)
+        gdb_stack_frames = frames = listify(parse_result_line(line)["stack"]["frame"])
+        args = listify(parse_result_line(run_cmd("-stack-list-arguments 1", True))["stack-args"]["frame"])
         gdb_callstack_view.clear()
         for i in range(len(frames)):
             output = "%s(" % frames[i]["func"]
-            for v in args[i]:
-                output += "%s = %s, " % v
+            for arg in args[i]["args"]:
+                output += "%s = %s, " % (arg["name"], arg["value"])
             output += ")\n"
 
             gdb_callstack_view.add_line(output)
@@ -677,8 +599,6 @@ def gdboutput(pipe):
                         sublime.set_timeout(update_cursor, 0)
                 if not line.startswith("(gdb)"):
                     gdb_lastline = line
-                if "BreakpointTable" in line:
-                    extract_breakpoints(line)
                 if command_result_regex.match(line) != None:
                     gdb_lastresult = line
 
