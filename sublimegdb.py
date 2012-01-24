@@ -53,7 +53,6 @@ gdb_cursor_position = 0
 
 gdb_process = None
 gdb_stack_frame = None
-gdb_stack_frames = []
 gdb_stack_index = 0
 
 gdb_run_status = None
@@ -319,6 +318,7 @@ class GDBRegisterView(GDBView):
             index = int(item["number"])
             self.add_line("%s: %s\n" % (self.names[index], item["value"]))
 
+
 class GDBVariablesView(GDBView):
     def __init__(self):
         super(GDBVariablesView, self).__init__("GDB Variables", False)
@@ -403,7 +403,7 @@ class GDBVariablesView(GDBView):
                 self.variables.append(self.create_variable(var))
         self.update_view()
 
-    def get_variable_at_line(self, line, var_list = None):
+    def get_variable_at_line(self, line, var_list=None):
         if var_list == None:
             var_list = self.variables
         if len(var_list) == 0:
@@ -417,13 +417,41 @@ class GDBVariablesView(GDBView):
         return self.get_variable_at_line(line, var_list[len(var_list) - 1].children)
 
 
+class GDBCallstackView(GDBView):
+    def __init__(self):
+        super(GDBCallstackView, self).__init__("GDB Callstack")
+
+    def update_callstack(self):
+        global gdb_cursor_position
+        line = run_cmd("-stack-list-frames", True)
+        if get_result(line) == "error":
+            gdb_cursor_position = 0
+            update_view_markers()
+            return
+        self.frames = listify(parse_result_line(line)["stack"]["frame"])
+        args = listify(parse_result_line(run_cmd("-stack-list-arguments 1", True))["stack-args"]["frame"])
+        self.clear()
+        for i in range(len(self.frames)):
+            output = "%s(" % self.frames[i]["func"]
+            for arg in args[i]["args"]:
+                output += "%s = %s, " % (arg["name"], arg["value"])
+            output += ")\n"
+
+            self.add_line(output)
+        self.update()
+
+    def select(self, row):
+        if row < len(self.frames):
+            run_cmd("-stack-select-frame %d" % row)
+            update_cursor()
+
+
 def extract_breakpoints(line):
     res = parse_result_line(line)
     if "bkpt" in res["BreakpointTable"]:
         return res["BreakpointTable"]["bkpt"]
     else:
         return res["BreakpointTable"]["body"]["bkpt"]
-
 
 
 def update_view_markers(view=None):
@@ -569,7 +597,6 @@ def listify(var):
 def update_cursor():
     global gdb_cursor
     global gdb_cursor_position
-    global gdb_stack_frames
     global gdb_stack_index
     global gdb_stack_frame
 
@@ -585,22 +612,7 @@ def update_cursor():
                 gdb_stack_frame["func"] == currFrame["func"]
     gdb_stack_frame = currFrame
     if not sameFrame:
-        line = run_cmd("-stack-list-frames", True)
-        if get_result(line) == "error":
-            gdb_cursor_position = 0
-            update_view_markers()
-            return
-        gdb_stack_frames = frames = listify(parse_result_line(line)["stack"]["frame"])
-        args = listify(parse_result_line(run_cmd("-stack-list-arguments 1", True))["stack-args"]["frame"])
-        gdb_callstack_view.clear()
-        for i in range(len(frames)):
-            output = "%s(" % frames[i]["func"]
-            for arg in args[i]["args"]:
-                output += "%s = %s, " % (arg["name"], arg["value"])
-            output += ")\n"
-
-            gdb_callstack_view.add_line(output)
-        gdb_callstack_view.update()
+        gdb_callstack_view.update_callstack()
 
     update_view_markers()
     gdb_variables_view.update_variables(sameFrame)
@@ -727,11 +739,10 @@ class GdbLaunch(sublime_plugin.TextCommand):
                 gdb_variables_view = GDBVariablesView()
             if gdb_callstack_view == None or gdb_callstack_view.is_closed():
                 w.focus_group(callstack_group)
-                gdb_callstack_view = GDBView("GDB Callstack")
+                gdb_callstack_view = GDBCallstackView()
             if gdb_register_view == None or gdb_register_view.is_closed():
                 w.focus_group(register_group)
                 gdb_register_view = GDBRegisterView()
-
 
             gdb_views.append(gdb_session_view)
             gdb_views.append(gdb_console_view)
@@ -898,9 +909,7 @@ class GdbClick(sublime_plugin.TextCommand):
         if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
             expand_collapse_variable(self.view, toggle=True)
         elif gdb_callstack_view != None and self.view.id() == gdb_callstack_view.get_view().id():
-            if row < len(gdb_stack_frames):
-                run_cmd("-stack-select-frame %d" % row)
-                update_cursor()
+            gdb_callstack_view.select(row)
 
     def is_enabled(self):
         return is_running()
@@ -976,4 +985,3 @@ class GdbEventListener(sublime_plugin.EventListener):
         for v in gdb_views:
             if view.id() == v.get_view().id():
                 v.was_closed()
-
