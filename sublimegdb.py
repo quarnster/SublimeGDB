@@ -52,7 +52,6 @@ gdb_cursor = ""
 gdb_cursor_position = 0
 
 gdb_process = None
-gdb_variables = []
 gdb_stack_frame = None
 gdb_stack_frames = []
 gdb_stack_index = 0
@@ -202,7 +201,7 @@ class GDBVariable:
         line = run_cmd("-var-assign %s \"%s\"" % (self.get_name(), val), True)
         if get_result(line) == "done":
             self.valuepair["value"] = parse_result_line(line)["value"]
-            update_variables_view()
+            gdb_variables_view.update_view()
         else:
             err = line[line.find("msg=") + 4:]
             sublime.status_message("Error: %s" % err)
@@ -320,94 +319,102 @@ class GDBRegisterView(GDBView):
             index = int(item["number"])
             self.add_line("%s: %s\n" % (self.names[index], item["value"]))
 
+class GDBVariablesView(GDBView):
+    def __init__(self):
+        super(GDBVariablesView, self).__init__("GDB Variables", False)
+        self.variables = []
 
-def update_variables_view():
-    gdb_variables_view.clear()
-    output = ""
-    line = 0
-    dirtylist = []
-    for local in gdb_variables:
-        output, line = local.format(line=line, dirty=dirtylist)
-        gdb_variables_view.add_line(output)
-    gdb_variables_view.update()
-    regions = []
-    v = gdb_variables_view.get_view()
-    for dirty in dirtylist:
-        regions.append(v.full_line(v.text_point(dirty.line, 0)))
-    v.add_regions("sublimegdb.dirtyvariables", regions,
-                    get_setting("changed_variable_scope", "entity.name.class"),
-                    get_setting("changed_variable_icon", ""),
-                    sublime.DRAW_OUTLINED)
+    def update_view(self):
+        self.clear()
+        output = ""
+        line = 0
+        dirtylist = []
+        for local in self.variables:
+            output, line = local.format(line=line, dirty=dirtylist)
+            self.add_line(output)
+        self.update()
+        regions = []
+        v = self.get_view()
+        for dirty in dirtylist:
+            regions.append(v.full_line(v.text_point(dirty.line, 0)))
+        v.add_regions("sublimegdb.dirtyvariables", regions,
+                        get_setting("changed_variable_scope", "entity.name.class"),
+                        get_setting("changed_variable_icon", ""),
+                        sublime.DRAW_OUTLINED)
 
+    def extract_varnames(self, res):
+        if "name" in res:
+            return listify(res["name"])
+        elif len(res) > 0 and type(res) is ListType:
+            if "name" in res[0]:
+                return [x["name"] for x in res]
+        return []
 
-def get_variable_at_line(line, var_list):
-    if len(var_list) == 0:
-        return None
+    def create_variable(self, exp):
+        line = run_cmd("-var-create - * %s" % exp, True)
+        var = parse_result_line(line)
+        var['exp'] = exp
+        return GDBVariable(var)
 
-    for i in range(len(var_list)):
-        if var_list[i].line == line:
-            return var_list[i]
-        elif var_list[i].line > line:
-            return get_variable_at_line(line, var_list[i - 1].children)
-    return get_variable_at_line(line, var_list[len(var_list) - 1].children)
+    def update_variables(self, sameFrame):
+        if sameFrame:
+            for var in self.variables:
+                var.clear_dirty()
+            ret = parse_result_line(run_cmd("-var-update --all-values *", True))["changelist"]
+            if "varobj" in ret:
+                ret = listify(ret["varobj"])
+            dellist = []
+            for value in ret:
+                name = value["name"]
+                for var in self.variables:
+                    real = var.find(name)
+                    if real != None:
+                        if  "in_scope" in value and value["in_scope"] == "false":
+                            real.delete()
+                            dellist.append(real)
+                            continue
+                        real.update(value)
+                        if not "value" in value and not "new_value" in value:
+                            real.update_value()
+                        break
+            for item in dellist:
+                self.variables.remove(item)
 
+            loc = self.extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
+            tracked = []
+            for var in loc:
+                create = True
+                for var2 in self.variables:
+                    if var2['exp'] == var and var2 not in tracked:
+                        tracked.append(var2)
+                        create = False
+                        break
+                if create:
+                    self.variables.append(self.create_variable(var))
+        else:
+            for var in self.variables:
+                var.delete()
+            args = self.extract_varnames(parse_result_line(run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True))["stack-args"]["frame"]["args"])
+            self.variables = []
+            for arg in args:
+                self.variables.append(self.create_variable(arg))
+            loc = self.extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
+            for var in loc:
+                self.variables.append(self.create_variable(var))
+        self.update_view()
 
-def extract_varnames(res):
-    if "name" in res:
-        return listify(res["name"])
-    elif len(res) > 0 and type(res) is ListType:
-        if "name" in res[0]:
-            return [x["name"] for x in res]
-    return []
+    def get_variable_at_line(self, line, var_list = None):
+        if var_list == None:
+            var_list = self.variables
+        if len(var_list) == 0:
+            return None
 
-
-def update_variables(sameFrame):
-    global gdb_variables
-    if sameFrame:
-        for var in gdb_variables:
-            var.clear_dirty()
-        ret = parse_result_line(run_cmd("-var-update --all-values *", True))["changelist"]
-        if "varobj" in ret:
-            ret = listify(ret["varobj"])
-        dellist = []
-        for value in ret:
-            name = value["name"]
-            for var in gdb_variables:
-                real = var.find(name)
-                if real != None:
-                    if  "in_scope" in value and value["in_scope"] == "false":
-                        real.delete()
-                        dellist.append(real)
-                        continue
-                    real.update(value)
-                    if not "value" in value and not "new_value" in value:
-                        real.update_value()
-                    break
-        for item in dellist:
-            gdb_variables.remove(item)
-
-        loc = extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
-        tracked = []
-        for var in loc:
-            create = True
-            for var2 in gdb_variables:
-                if var2['exp'] == var and var2 not in tracked:
-                    tracked.append(var2)
-                    create = False
-                    break
-            if create:
-                gdb_variables.append(create_variable(var))
-    else:
-        for var in gdb_variables:
-            var.delete()
-        args = extract_varnames(parse_result_line(run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True))["stack-args"]["frame"]["args"])
-        gdb_variables = []
-        for arg in args:
-            gdb_variables.append(create_variable(arg))
-        loc = extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
-        for var in loc:
-            gdb_variables.append(create_variable(var))
-    update_variables_view()
+        for i in range(len(var_list)):
+            if var_list[i].line == line:
+                return var_list[i]
+            elif var_list[i].line > line:
+                return self.get_variable_at_line(line, var_list[i - 1].children)
+        return self.get_variable_at_line(line, var_list[len(var_list) - 1].children)
 
 
 def extract_breakpoints(line):
@@ -417,12 +424,6 @@ def extract_breakpoints(line):
     else:
         return res["BreakpointTable"]["body"]["bkpt"]
 
-
-def create_variable(exp):
-    line = run_cmd("-var-create - * %s" % exp, True)
-    var = parse_result_line(line)
-    var['exp'] = exp
-    return GDBVariable(var)
 
 
 def update_view_markers(view=None):
@@ -602,7 +603,7 @@ def update_cursor():
         gdb_callstack_view.update()
 
     update_view_markers()
-    update_variables(sameFrame)
+    gdb_variables_view.update_variables(sameFrame)
     gdb_register_view.update_values()
 
 
@@ -723,7 +724,7 @@ class GdbLaunch(sublime_plugin.TextCommand):
                 gdb_console_view = GDBView("GDB Console")
             if gdb_variables_view == None or gdb_variables_view.is_closed():
                 w.focus_group(variables_group)
-                gdb_variables_view = GDBView("GDB Variables", False)
+                gdb_variables_view = GDBVariablesView()
             if gdb_callstack_view == None or gdb_callstack_view.is_closed():
                 w.focus_group(callstack_group)
                 gdb_callstack_view = GDBView("GDB Callstack")
@@ -869,7 +870,7 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
 def expand_collapse_variable(view, expand=True, toggle=False):
     row, col = view.rowcol(view.sel()[0].a)
     if gdb_variables_view != None and view.id() == gdb_variables_view.get_view().id():
-        var = get_variable_at_line(row, gdb_variables)
+        var = gdb_variables_view.get_variable_at_line(row)
         if var and var.has_children():
             if toggle:
                 if var.is_expanded:
@@ -881,7 +882,7 @@ def expand_collapse_variable(view, expand=True, toggle=False):
             else:
                 var.collapse()
             pos = view.viewport_position()
-            update_variables_view()
+            gdb_variables_view.update_view()
             gdb_variables_view.update()
             gdb_variables_view.scroll(row)
             gdb_variables_view.set_viewport_position(pos)
@@ -935,7 +936,7 @@ class GdbEditVariable(sublime_plugin.TextCommand):
     def run(self, edit):
         row, col = self.view.rowcol(self.view.sel()[0].a)
         if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
-            var = get_variable_at_line(row, gdb_variables)
+            var = gdb_variables_view.get_variable_at_line(row)
             if var.is_editable():
                 var.edit()
             else:
