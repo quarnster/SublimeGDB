@@ -52,5 +52,8 @@
     "variables_index": 2,
 
     "callstack_group": 2,
-    "callstack_index": 0
+    "callstack_index": 0,
+
+    "register_group": 2,
+    "register_index": 1
 }

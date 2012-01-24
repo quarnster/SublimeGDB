@@ -32,7 +32,7 @@ def _parse_result_line(line):
         if inComment:
             if c == "\"":
                 inComment = False
-                value = line[start:i]
+                value = line[start:i].replace("\\\"", "\"").replace("\\n", "\n").replace("\\t", "\t")
                 d = add(d, key, value)
                 key = ""
                 start = i + 1

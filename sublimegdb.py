@@ -62,6 +62,8 @@ gdb_session_view = None
 gdb_console_view = None
 gdb_variables_view = None
 gdb_callstack_view = None
+gdb_register_view = None
+gdb_views = []
 result_regex = re.compile("(?<=\^)[^,]*")
 
 
@@ -70,7 +72,7 @@ def log_debug(line):
         os.system("echo \"%s\" >> \"%s\"" % (line, DEBUG_FILE))
 
 
-class GDBView:
+class GDBView(object):
     LINE = 0
     FOLD_ALL = 1
     CLEAR = 2
@@ -284,6 +286,39 @@ class GDBVariable:
         if self.is_dirty():
             dirty.append(self)
         return (output, line)
+
+
+class GDBRegister:
+    def __init__(self, name, index, val):
+        self.name = name
+        self.index = index
+        self.value = val
+
+
+class GDBRegisterView(GDBView):
+    def __init__(self):
+        super(GDBRegisterView, self).__init__("GDB Registers")
+        self.names = None
+
+    def get_names(self):
+        line = run_cmd("-data-list-register-names", True)
+        return parse_result_line(line)["register-names"]
+
+    def get_values(self):
+        line = run_cmd("-data-list-register-values x", True)
+        if get_result(line) != "done":
+            return []
+        return parse_result_line(line)["register-values"]
+
+    def update_values(self):
+        if self.names == None:
+            self.names = self.get_names()
+        self.values = self.get_values()
+        self.clear()
+        for item in self.values:
+            log_debug(item)
+            index = int(item["number"])
+            self.add_line("%s: %s\n" % (self.names[index], item["value"]))
 
 
 def update_variables_view():
@@ -568,6 +603,7 @@ def update_cursor():
 
     update_view_markers()
     update_variables(sameFrame)
+    gdb_register_view.update_values()
 
 
 def session_ended_status_message():
@@ -655,6 +691,8 @@ class GdbLaunch(sublime_plugin.TextCommand):
         global gdb_variables_view
         global gdb_callstack_view
         global gdb_run_status
+        global gdb_register_view
+        global gdb_views
         if gdb_process == None or gdb_process.poll() != None:
             os.chdir(get_setting("workingdir", "/tmp"))
             commandline = get_setting("commandline")
@@ -674,6 +712,8 @@ class GdbLaunch(sublime_plugin.TextCommand):
             console_group = get_setting("console_group", 1)
             variables_group = get_setting("variables_group", 1)
             callstack_group = get_setting("callstack_group", 2)
+            register_group = get_setting("register_group", 2)
+            gdb_views = []
 
             if gdb_session_view == None or gdb_session_view.is_closed():
                 w.focus_group(session_group)
@@ -687,11 +727,18 @@ class GdbLaunch(sublime_plugin.TextCommand):
             if gdb_callstack_view == None or gdb_callstack_view.is_closed():
                 w.focus_group(callstack_group)
                 gdb_callstack_view = GDBView("GDB Callstack")
+            if gdb_register_view == None or gdb_register_view.is_closed():
+                w.focus_group(register_group)
+                gdb_register_view = GDBRegisterView()
 
-            gdb_session_view.clear()
-            gdb_console_view.clear()
-            gdb_variables_view.clear()
-            gdb_callstack_view.clear()
+
+            gdb_views.append(gdb_session_view)
+            gdb_views.append(gdb_console_view)
+            gdb_views.append(gdb_variables_view)
+            gdb_views.append(gdb_callstack_view)
+            gdb_views.append(gdb_register_view)
+            for view in gdb_views:
+                view.clear()
             # setting the view index keeps crashing my Linux...
             #w.set_view_index(gdb_session_view.get_view(), session_group, get_setting("session_index", 0))
             #w.set_view_index(gdb_console_view.get_view(), console_group, get_setting("console_index", 1))
@@ -715,6 +762,7 @@ It seems you're not running gdb with the "mi" interpreter. Please add
             sync_breakpoints()
             gdb_run_status = "running"
             run_cmd(get_setting("exec_cmd"), "-exec-run", True)
+
             show_input()
         else:
             sublime.status_message("GDB is already running!")
@@ -924,9 +972,7 @@ class GdbEventListener(sublime_plugin.EventListener):
             if is_running():
                 wait_until_stopped()
                 run_cmd("-gdb-exit", True)
-        if gdb_console_view != None and view.id() == gdb_console_view.get_view().id():
-            gdb_console_view.was_closed()
-        if gdb_variables_view != None and view.id() == gdb_variables_view.get_view().id():
-            gdb_variables_view.was_closed()
-        if gdb_callstack_view != None and view.id() == gdb_callstack_view.get_view().id():
-            gdb_callstack_view.was_closed()
+        for v in gdb_views:
+            if view.id() == v.get_view().id():
+                v.was_closed()
+
