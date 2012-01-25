@@ -610,9 +610,10 @@ def update_cursor():
     sublime.active_window().focus_group(get_setting("file_group", 0))
     file_view = sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
 
-    sameFrame = gdb_stack_frame != None and \
+    sameFrame = gdb_stack_index != 0 or \
+                (gdb_stack_frame != None and \
                 gdb_stack_frame["fullname"] == currFrame["fullname"] and \
-                gdb_stack_frame["func"] == currFrame["func"]
+                gdb_stack_frame["func"] == currFrame["func"])
     gdb_stack_frame = currFrame
     if not sameFrame:
         gdb_callstack_view.update_callstack()
