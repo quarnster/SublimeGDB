@@ -6,5 +6,30 @@
     { "command": "gdb_step_over", "caption": "Step Over" },
     { "command": "gdb_step_into", "caption": "Step Into" },
     { "command": "gdb_step_out", "caption": "Step Out" },
-    { "command": "gdb_exit", "caption": "Stop Debugging"}
+    {
+        "caption": "SublimeGDB: Step Next Instruction",
+        "command": "gdb_next_instruction"
+    },
+    { "command": "gdb_exit", "caption": "Stop Debugging"},
+    { "caption": "-", "id": "gdb_views" },
+    {
+        "caption": "SublimeGDB: Open Register View",
+        "command": "gdb_open_register_view"
+    },
+    {
+        "caption": "SublimeGDB: Open Session View",
+        "command": "gdb_open_session_view"
+    },
+    {
+        "caption": "SublimeGDB: Open Console View",
+        "command": "gdb_open_console_view"
+    },
+    {
+        "caption": "SublimeGDB: Open Callstack View",
+        "command": "gdb_open_callstack_view"
+    },
+    {
+        "caption": "SublimeGDB: Open Variables View",
+        "command": "gdb_open_variables_view"
+    }
 ]
