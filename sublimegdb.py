@@ -84,6 +84,9 @@ class GDBView(object):
         self.create_view()
         self.doScroll = s
 
+    def set_syntax(self, syntax):
+        self.get_view().set_syntax_file(syntax)
+
     def add_line(self, line):
         self.queue.put((GDBView.LINE, line))
         sublime.set_timeout(self.update, 0)
@@ -435,7 +438,7 @@ class GDBCallstackView(GDBView):
             output = "%s(" % self.frames[i]["func"]
             for arg in args[i]["args"]:
                 output += "%s = %s, " % (arg["name"], arg["value"])
-            output += ")\n"
+            output += ");\n"
 
             self.add_line(output)
         self.update()
@@ -605,7 +608,7 @@ def update_cursor():
     gdb_cursor = currFrame["fullname"]
     gdb_cursor_position = int(currFrame["line"])
     sublime.active_window().focus_group(get_setting("file_group", 0))
-    sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
+    file_view = sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
 
     sameFrame = gdb_stack_frame != None and \
                 gdb_stack_frame["fullname"] == currFrame["fullname"] and \
@@ -613,6 +616,11 @@ def update_cursor():
     gdb_stack_frame = currFrame
     if not sameFrame:
         gdb_callstack_view.update_callstack()
+
+    syntax = file_view.settings().get("syntax")
+    gdb_variables_view.set_syntax(syntax)
+    gdb_callstack_view.set_syntax(syntax)
+    gdb_register_view.set_syntax(syntax)
 
     update_view_markers()
     gdb_variables_view.update_variables(sameFrame)
