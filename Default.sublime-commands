@@ -14,6 +14,38 @@
         }
     },
     {
+        "caption": "SublimeGDB: Show Input Field",
+        "command": "gdb_input"
+    },
+    {
+        "caption": "SublimeGDB: Start Debugging",
+        "command": "gdb_launch"
+    },
+    {
+        "caption": "SublimeGDB: Continue",
+        "command": "gdb_continue"
+    },
+    {
+        "caption": "SublimeGDB: Pause",
+        "command": "gdb_pause"
+    },
+    {
+        "caption": "SublimeGDB: Step Over",
+        "command": "gdb_step_over"
+    },
+    {
+        "caption": "SublimeGDB: Step Into",
+        "command": "gdb_step_into"
+    },
+    {
+        "caption": "SublimeGDB: Step Next Instruction",
+        "command": "gdb_next_instruction"
+    },
+    {
+        "caption": "SublimeGDB: Step Out",
+        "command": "gdb_step_out"
+    },
+    {
         "caption": "SublimeGDB: Stop Debugging",
         "command": "gdb_exit"
     },

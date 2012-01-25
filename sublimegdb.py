@@ -93,6 +93,9 @@ class GDBView(object):
                 sublime.active_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0))
             self.create_view()
 
+    def should_update(self):
+        return self.is_open() and is_running() and gdb_run_status == "stopped"
+
     def set_syntax(self, syntax):
         if self.is_open():
             self.get_view().set_syntax_file(syntax)
@@ -329,7 +332,7 @@ class GDBRegisterView(GDBView):
         return parse_result_line(line)["register-values"]
 
     def update_values(self):
-        if not self.is_open():
+        if not self.should_update():
             return
         if self.names == None:
             self.names = self.get_names()
@@ -384,7 +387,7 @@ class GDBVariablesView(GDBView):
         return GDBVariable(var)
 
     def update_variables(self, sameFrame):
-        if not self.is_open():
+        if not self.should_update():
             return
         if sameFrame:
             for var in self.variables:
@@ -456,7 +459,7 @@ class GDBCallstackView(GDBView):
             self.update_callstack()
 
     def update_callstack(self):
-        if not self.is_open():
+        if not self.should_update():
             return
         global gdb_cursor_position
         line = run_cmd("-stack-list-frames", True)
