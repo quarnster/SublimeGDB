@@ -782,11 +782,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
                 if view.is_closed() and view.open_at_start():
                     view.open()
                 view.clear()
-            # setting the view index keeps crashing my Linux...
-            #w.set_view_index(gdb_session_view.get_view(), session_group, get_setting("session_index", 0))
-            #w.set_view_index(gdb_console_view.get_view(), console_group, get_setting("console_index", 1))
-            #w.set_view_index(gdb_variables_view.get_view(), variables_group, get_setting("variables_index", 2))
-            #w.set_view_index(gdb_callstack_view.get_view(), callstack_group, get_setting("callstack_index", 0))
+
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
             try:
