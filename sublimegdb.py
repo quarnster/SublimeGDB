@@ -101,20 +101,24 @@ class GDBView(object):
             self.get_view().set_syntax_file(syntax)
 
     def add_line(self, line):
-        self.queue.put((GDBView.LINE, line))
-        sublime.set_timeout(self.update, 0)
+        if self.is_open():
+            self.queue.put((GDBView.LINE, line))
+            sublime.set_timeout(self.update, 0)
 
     def scroll(self, line):
-        self.queue.put((GDBView.SCROLL, line))
-        sublime.set_timeout(self.update, 0)
+        if self.is_open():
+            self.queue.put((GDBView.SCROLL, line))
+            sublime.set_timeout(self.update, 0)
 
     def set_viewport_position(self, pos):
-        self.queue.put((GDBView.VIEWPORT_POSITION, pos))
-        sublime.set_timeout(self.update, 0)
+        if self.is_open():
+            self.queue.put((GDBView.VIEWPORT_POSITION, pos))
+            sublime.set_timeout(self.update, 0)
 
     def clear(self):
-        self.queue.put((GDBView.CLEAR, None))
-        sublime.set_timeout(self.update, 0)
+        if self.is_open():
+            self.queue.put((GDBView.CLEAR, None))
+            sublime.set_timeout(self.update, 0)
 
     def create_view(self):
         self.view = sublime.active_window().new_file()
@@ -130,7 +134,8 @@ class GDBView(object):
         self.closed = True
 
     def fold_all(self):
-        self.queue.put((GDBView.FOLD_ALL, None))
+        if self.is_open():
+            self.queue.put((GDBView.FOLD_ALL, None))
 
     def get_view(self):
         return self.view
@@ -138,20 +143,21 @@ class GDBView(object):
     def update(self):
         if not self.is_open():
             return
-        self.view.set_read_only(False)
+        insert = ""
         try:
             while True:
                 cmd, data = self.queue.get_nowait()
                 if cmd == GDBView.LINE:
-                    e = self.view.begin_edit()
-                    self.view.insert(e, self.view.size(), data)
-                    self.view.end_edit(e)
+                    insert += data
                 elif cmd == GDBView.FOLD_ALL:
                     self.view.run_command("fold_all")
                 elif cmd == GDBView.CLEAR:
+                    insert = ""
+                    self.view.set_read_only(False)
                     e = self.view.begin_edit()
                     self.view.erase(e, sublime.Region(0, self.view.size()))
                     self.view.end_edit(e)
+                    self.view.set_read_only(True)
                 elif cmd == GDBView.SCROLL:
                     self.view.run_command("goto_line", {"line": data + 1})
                 elif cmd == GDBView.VIEWPORT_POSITION:
@@ -163,9 +169,14 @@ class GDBView(object):
         except:
             traceback.print_exc()
         finally:
-            self.view.set_read_only(True)
-            if self.doScroll:
-                self.view.show(self.view.size())
+            if len(insert) > 0:
+                self.view.set_read_only(False)
+                e = self.view.begin_edit()
+                self.view.insert(e, self.view.size(), insert)
+                self.view.end_edit(e)
+                self.view.set_read_only(True)
+                if self.doScroll:
+                    self.view.show(self.view.size())
 
 
 class GDBVariable:
@@ -549,10 +560,10 @@ def run_cmd(cmd, block=False, mimode=True):
     if block:
         countstr = "%d^" % count
         i = 0
-        while not gdb_lastresult.startswith(countstr) and i < 100:
+        while not gdb_lastresult.startswith(countstr) and i < 10000:
             i += 1
-            time.sleep(0.1)
-        if i >= 100:
+            time.sleep(0.001)
+        if i >= 10000:
             raise ValueError("Command \"%s\" took longer than 10 seconds to perform?" % cmd)
         return gdb_lastresult
     return count
@@ -653,12 +664,11 @@ def update_cursor():
     sublime.active_window().focus_group(get_setting("file_group", 0))
     file_view = sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
 
-    sameFrame = gdb_stack_index != 0 or \
-                (gdb_stack_frame != None and \
+    sameFrame = gdb_stack_frame != None and \
                 gdb_stack_frame["fullname"] == currFrame["fullname"] and \
-                gdb_stack_frame["func"] == currFrame["func"])
+                gdb_stack_frame["func"] == currFrame["func"]
     gdb_stack_frame = currFrame
-    if not sameFrame:
+    if gdb_stack_index == 0 and not sameFrame:
         gdb_callstack_view.update_callstack()
 
     syntax = file_view.settings().get("syntax")
