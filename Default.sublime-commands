@@ -12,5 +12,29 @@
         {
             "file": "${packages}/User/SublimeGDB.sublime-settings"
         }
+    },
+    {
+        "caption": "SublimeGDB: Stop Debugging",
+        "command": "gdb_exit"
+    },
+    {
+        "caption": "SublimeGDB: Open Register View",
+        "command": "gdb_open_register_view"
+    },
+    {
+        "caption": "SublimeGDB: Open Session View",
+        "command": "gdb_open_session_view"
+    },
+    {
+        "caption": "SublimeGDB: Open Console View",
+        "command": "gdb_open_console_view"
+    },
+    {
+        "caption": "SublimeGDB: Open Callstack View",
+        "command": "gdb_open_callstack_view"
+    },
+    {
+        "caption": "SublimeGDB: Open Variables View",
+        "command": "gdb_open_variables_view"
     }
 ]

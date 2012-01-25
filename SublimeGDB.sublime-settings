@@ -44,16 +44,21 @@
 
     "session_group": 1,
     "session_index": 0,
+    "session_open": true,
 
     "console_group": 1,
     "console_index": 1,
+    "console_open": true,
 
     "variables_group": 1,
     "variables_index": 2,
+    "variables_open": true,
 
     "callstack_group": 2,
     "callstack_index": 0,
+    "callstack_open": true,
 
-    "register_group": 2,
-    "register_index": 1
+    "registers_group": 2,
+    "registers_index": 1,
+    "registers_open": false
 }

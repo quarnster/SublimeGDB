@@ -56,12 +56,6 @@ gdb_stack_frame = None
 gdb_stack_index = 0
 
 gdb_run_status = None
-gdb_session_view = None
-gdb_console_view = None
-gdb_variables_view = None
-gdb_callstack_view = None
-gdb_register_view = None
-gdb_views = []
 result_regex = re.compile("(?<=\^)[^,]*")
 
 
@@ -77,12 +71,27 @@ class GDBView(object):
     SCROLL = 3
     VIEWPORT_POSITION = 4
 
-    def __init__(self, name, s=True):
+    def __init__(self, name, s=True, settingsprefix=None):
         self.queue = Queue.Queue()
         self.name = name
-        self.closed = False
-        self.create_view()
+        self.closed = True
         self.doScroll = s
+        self.view = None
+        self.settingsprefix = settingsprefix
+
+    def is_open(self):
+        return not self.closed
+
+    def open_at_start(self):
+        if self.settingsprefix != None:
+            return get_setting("%s_open" % self.settingsprefix, False)
+        return False
+
+    def open(self):
+        if self.view == None or self.view.window() == None:
+            if self.settingsprefix != None:
+                sublime.active_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0))
+            self.create_view()
 
     def set_syntax(self, syntax):
         self.get_view().set_syntax_file(syntax)
@@ -108,6 +117,7 @@ class GDBView(object):
         self.view.set_name(self.name)
         self.view.set_scratch(True)
         self.view.set_read_only(True)
+        self.closed = False
 
     def is_closed(self):
         return self.closed
@@ -122,25 +132,25 @@ class GDBView(object):
         return self.view
 
     def update(self):
-
         self.view.set_read_only(False)
         try:
             while True:
                 cmd, data = self.queue.get_nowait()
-                if cmd == GDBView.LINE:
-                    e = self.view.begin_edit()
-                    self.view.insert(e, self.view.size(), data)
-                    self.view.end_edit(e)
-                elif cmd == GDBView.FOLD_ALL:
-                    self.view.run_command("fold_all")
-                elif cmd == GDBView.CLEAR:
-                    e = self.view.begin_edit()
-                    self.view.erase(e, sublime.Region(0, self.view.size()))
-                    self.view.end_edit(e)
-                elif cmd == GDBView.SCROLL:
-                    self.view.run_command("goto_line", {"line": data + 1})
-                elif cmd == GDBView.VIEWPORT_POSITION:
-                    self.view.set_viewport_position(data, True)
+                if self.is_open():
+                    if cmd == GDBView.LINE:
+                        e = self.view.begin_edit()
+                        self.view.insert(e, self.view.size(), data)
+                        self.view.end_edit(e)
+                    elif cmd == GDBView.FOLD_ALL:
+                        self.view.run_command("fold_all")
+                    elif cmd == GDBView.CLEAR:
+                        e = self.view.begin_edit()
+                        self.view.erase(e, sublime.Region(0, self.view.size()))
+                        self.view.end_edit(e)
+                    elif cmd == GDBView.SCROLL:
+                        self.view.run_command("goto_line", {"line": data + 1})
+                    elif cmd == GDBView.VIEWPORT_POSITION:
+                        self.view.set_viewport_position(data, True)
                 self.queue.task_done()
         except Queue.Empty:
             # get_nowait throws an exception when there's nothing..
@@ -298,8 +308,13 @@ class GDBRegister:
 
 class GDBRegisterView(GDBView):
     def __init__(self):
-        super(GDBRegisterView, self).__init__("GDB Registers")
+        super(GDBRegisterView, self).__init__("GDB Registers", settingsprefix="registers")
         self.names = None
+
+    def open(self):
+        super(GDBRegisterView, self).open()
+        if self.is_open() and gdb_run_status == "stopped":
+            self.update_values()
 
     def get_names(self):
         line = run_cmd("-data-list-register-names", True)
@@ -324,8 +339,13 @@ class GDBRegisterView(GDBView):
 
 class GDBVariablesView(GDBView):
     def __init__(self):
-        super(GDBVariablesView, self).__init__("GDB Variables", False)
+        super(GDBVariablesView, self).__init__("GDB Variables", False, settingsprefix="variables")
         self.variables = []
+
+    def open(self):
+        super(GDBVariablesView, self).open()
+        if self.is_open() and gdb_run_status == "stopped":
+            self.update_variables(False)
 
     def update_view(self):
         self.clear()
@@ -422,7 +442,12 @@ class GDBVariablesView(GDBView):
 
 class GDBCallstackView(GDBView):
     def __init__(self):
-        super(GDBCallstackView, self).__init__("GDB Callstack")
+        super(GDBCallstackView, self).__init__("GDB Callstack", settingsprefix="callstack")
+
+    def open(self):
+        super(GDBCallstackView, self).open()
+        if self.is_open() and gdb_run_status == "stopped":
+            self.update_callstack()
 
     def update_callstack(self):
         global gdb_cursor_position
@@ -447,6 +472,13 @@ class GDBCallstackView(GDBView):
         if row < len(self.frames):
             run_cmd("-stack-select-frame %d" % row)
             update_cursor()
+
+gdb_session_view = GDBView("GDB Session", settingsprefix="session")
+gdb_console_view = GDBView("GDB Console", settingsprefix="console")
+gdb_variables_view = GDBVariablesView()
+gdb_callstack_view = GDBCallstackView()
+gdb_register_view = GDBRegisterView()
+gdb_views = [gdb_session_view, gdb_console_view, gdb_variables_view, gdb_callstack_view, gdb_register_view]
 
 
 def extract_breakpoints(line):
@@ -479,8 +511,8 @@ def update_view_markers(view=None):
     pos_icon = get_setting("position_icon", "bookmark")
     view.add_regions("sublimegdb.position", cursor, pos_scope, pos_icon, sublime.HIDDEN)
 
-    if gdb_callstack_view != None:
-        view = gdb_callstack_view.get_view()
+    view = gdb_callstack_view.get_view()
+    if view != None:
         view.add_regions("sublimegdb.stackframe",
                             [view.line(view.text_point(gdb_stack_index, 0))],
                             pos_scope, pos_icon, sublime.HIDDEN)
@@ -708,13 +740,7 @@ class GdbInput(sublime_plugin.TextCommand):
 class GdbLaunch(sublime_plugin.TextCommand):
     def run(self, edit):
         global gdb_process
-        global gdb_session_view
-        global gdb_console_view
-        global gdb_variables_view
-        global gdb_callstack_view
         global gdb_run_status
-        global gdb_register_view
-        global gdb_views
         if gdb_process == None or gdb_process.poll() != None:
             os.chdir(get_setting("workingdir", "/tmp"))
             commandline = get_setting("commandline")
@@ -730,35 +756,10 @@ class GdbLaunch(sublime_plugin.TextCommand):
                     }
                 )
             )
-            session_group = get_setting("session_group", 1)
-            console_group = get_setting("console_group", 1)
-            variables_group = get_setting("variables_group", 1)
-            callstack_group = get_setting("callstack_group", 2)
-            register_group = get_setting("register_group", 2)
-            gdb_views = []
 
-            if gdb_session_view == None or gdb_session_view.is_closed():
-                w.focus_group(session_group)
-                gdb_session_view = GDBView("GDB Session")
-            if gdb_console_view == None or gdb_console_view.is_closed():
-                w.focus_group(console_group)
-                gdb_console_view = GDBView("GDB Console")
-            if gdb_variables_view == None or gdb_variables_view.is_closed():
-                w.focus_group(variables_group)
-                gdb_variables_view = GDBVariablesView()
-            if gdb_callstack_view == None or gdb_callstack_view.is_closed():
-                w.focus_group(callstack_group)
-                gdb_callstack_view = GDBCallstackView()
-            if gdb_register_view == None or gdb_register_view.is_closed():
-                w.focus_group(register_group)
-                gdb_register_view = GDBRegisterView()
-
-            gdb_views.append(gdb_session_view)
-            gdb_views.append(gdb_console_view)
-            gdb_views.append(gdb_variables_view)
-            gdb_views.append(gdb_callstack_view)
-            gdb_views.append(gdb_register_view)
             for view in gdb_views:
+                if view.is_closed() and view.open_at_start():
+                    view.open()
                 view.clear()
             # setting the view index keeps crashing my Linux...
             #w.set_view_index(gdb_session_view.get_view(), session_group, get_setting("session_index", 0))
@@ -809,8 +810,8 @@ class GdbContinue(sublime_plugin.TextCommand):
         return is_running()
 
 
-class GdbExit(sublime_plugin.TextCommand):
-    def run(self, edit):
+class GdbExit(sublime_plugin.WindowCommand):
+    def run(self):
         wait_until_stopped()
         run_cmd("-gdb-exit", True)
 
@@ -889,7 +890,7 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
 
 def expand_collapse_variable(view, expand=True, toggle=False):
     row, col = view.rowcol(view.sel()[0].a)
-    if gdb_variables_view != None and view.id() == gdb_variables_view.get_view().id():
+    if gdb_variables_view.is_open() and view.id() == gdb_variables_view.get_view().id():
         var = gdb_variables_view.get_variable_at_line(row)
         if var and var.has_children():
             if toggle:
@@ -915,9 +916,9 @@ class GdbClick(sublime_plugin.TextCommand):
             return
 
         row, col = self.view.rowcol(self.view.sel()[0].a)
-        if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
+        if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
             expand_collapse_variable(self.view, toggle=True)
-        elif gdb_callstack_view != None and self.view.id() == gdb_callstack_view.get_view().id():
+        elif gdb_callstack_view.is_open() and self.view.id() == gdb_callstack_view.get_view().id():
             gdb_callstack_view.select(row)
 
     def is_enabled(self):
@@ -932,7 +933,7 @@ class GdbCollapseVariable(sublime_plugin.TextCommand):
         if not is_running():
             return False
         row, col = self.view.rowcol(self.view.sel()[0].a)
-        if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
+        if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
             return True
         return False
 
@@ -945,7 +946,7 @@ class GdbExpandVariable(sublime_plugin.TextCommand):
         if not is_running():
             return False
         row, col = self.view.rowcol(self.view.sel()[0].a)
-        if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
+        if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
             return True
         return False
 
@@ -953,7 +954,7 @@ class GdbExpandVariable(sublime_plugin.TextCommand):
 class GdbEditVariable(sublime_plugin.TextCommand):
     def run(self, edit):
         row, col = self.view.rowcol(self.view.sel()[0].a)
-        if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
+        if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
             var = gdb_variables_view.get_variable_at_line(row)
             if var.is_editable():
                 var.edit()
@@ -964,7 +965,7 @@ class GdbEditVariable(sublime_plugin.TextCommand):
         if not is_running():
             return False
         row, col = self.view.rowcol(self.view.sel()[0].a)
-        if gdb_variables_view != None and self.view.id() == gdb_variables_view.get_view().id():
+        if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
             return True
         return False
 
@@ -974,7 +975,7 @@ class GdbEventListener(sublime_plugin.EventListener):
         if key == "gdb_running":
             return is_running() == operand
         elif key == "gdb_variables_view":
-            return gdb_variables_view != None and view.id() == gdb_variables_view.get_view().id()
+            return gdb_variables_view.is_open() and view.id() == gdb_variables_view.get_view().id()
         return None
 
     def on_activated(self, view):
@@ -986,11 +987,62 @@ class GdbEventListener(sublime_plugin.EventListener):
             update_view_markers(view)
 
     def on_close(self, view):
-        if gdb_session_view != None and view.id() == gdb_session_view.get_view().id():
-            gdb_session_view.was_closed()
-            if is_running():
-                wait_until_stopped()
-                run_cmd("-gdb-exit", True)
         for v in gdb_views:
-            if view.id() == v.get_view().id():
+            if v.is_open() and view.id() == v.get_view().id():
                 v.was_closed()
+                break
+
+
+class GdbOpenSessionView(sublime_plugin.WindowCommand):
+    def run(self):
+        gdb_session_view.open()
+
+    def is_enabled(self):
+        return not gdb_session_view.is_open()
+
+    def is_visible(self):
+        return not gdb_session_view.is_open()
+
+
+class GdbOpenConsoleView(sublime_plugin.WindowCommand):
+    def run(self):
+        gdb_console_view.open()
+
+    def is_enabled(self):
+        return not gdb_console_view.is_open()
+
+    def is_visible(self):
+        return not gdb_console_view.is_open()
+
+
+class GdbOpenVariablesView(sublime_plugin.WindowCommand):
+    def run(self):
+        gdb_variables_view.open()
+
+    def is_enabled(self):
+        return not gdb_variables_view.is_open()
+
+    def is_visible(self):
+        return not gdb_variables_view.is_open()
+
+
+class GdbOpenCallstackView(sublime_plugin.WindowCommand):
+    def run(self):
+        gdb_callstack_view.open()
+
+    def is_enabled(self):
+        return not gdb_callstack_view.is_open()
+
+    def is_visible(self):
+        return not gdb_callstack_view.is_open()
+
+
+class GdbOpenRegisterView(sublime_plugin.WindowCommand):
+    def run(self):
+        gdb_register_view.open()
+
+    def is_enabled(self):
+        return not gdb_register_view.is_open()
+
+    def is_visible(self):
+        return not gdb_register_view.is_open()
