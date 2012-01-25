@@ -94,7 +94,8 @@ class GDBView(object):
             self.create_view()
 
     def set_syntax(self, syntax):
-        self.get_view().set_syntax_file(syntax)
+        if self.is_open():
+            self.get_view().set_syntax_file(syntax)
 
     def add_line(self, line):
         self.queue.put((GDBView.LINE, line))
@@ -132,25 +133,26 @@ class GDBView(object):
         return self.view
 
     def update(self):
+        if not self.is_open():
+            return
         self.view.set_read_only(False)
         try:
             while True:
                 cmd, data = self.queue.get_nowait()
-                if self.is_open():
-                    if cmd == GDBView.LINE:
-                        e = self.view.begin_edit()
-                        self.view.insert(e, self.view.size(), data)
-                        self.view.end_edit(e)
-                    elif cmd == GDBView.FOLD_ALL:
-                        self.view.run_command("fold_all")
-                    elif cmd == GDBView.CLEAR:
-                        e = self.view.begin_edit()
-                        self.view.erase(e, sublime.Region(0, self.view.size()))
-                        self.view.end_edit(e)
-                    elif cmd == GDBView.SCROLL:
-                        self.view.run_command("goto_line", {"line": data + 1})
-                    elif cmd == GDBView.VIEWPORT_POSITION:
-                        self.view.set_viewport_position(data, True)
+                if cmd == GDBView.LINE:
+                    e = self.view.begin_edit()
+                    self.view.insert(e, self.view.size(), data)
+                    self.view.end_edit(e)
+                elif cmd == GDBView.FOLD_ALL:
+                    self.view.run_command("fold_all")
+                elif cmd == GDBView.CLEAR:
+                    e = self.view.begin_edit()
+                    self.view.erase(e, sublime.Region(0, self.view.size()))
+                    self.view.end_edit(e)
+                elif cmd == GDBView.SCROLL:
+                    self.view.run_command("goto_line", {"line": data + 1})
+                elif cmd == GDBView.VIEWPORT_POSITION:
+                    self.view.set_viewport_position(data, True)
                 self.queue.task_done()
         except Queue.Empty:
             # get_nowait throws an exception when there's nothing..
@@ -327,6 +329,8 @@ class GDBRegisterView(GDBView):
         return parse_result_line(line)["register-values"]
 
     def update_values(self):
+        if not self.is_open():
+            return
         if self.names == None:
             self.names = self.get_names()
         self.values = self.get_values()
@@ -380,6 +384,8 @@ class GDBVariablesView(GDBView):
         return GDBVariable(var)
 
     def update_variables(self, sameFrame):
+        if not self.is_open():
+            return
         if sameFrame:
             for var in self.variables:
                 var.clear_dirty()
@@ -450,6 +456,8 @@ class GDBCallstackView(GDBView):
             self.update_callstack()
 
     def update_callstack(self):
+        if not self.is_open():
+            return
         global gdb_cursor_position
         line = run_cmd("-stack-list-frames", True)
         if get_result(line) == "error":
@@ -732,13 +740,13 @@ def is_running():
     return gdb_process != None and gdb_process.poll() == None
 
 
-class GdbInput(sublime_plugin.TextCommand):
-    def run(self, edit):
+class GdbInput(sublime_plugin.WindowCommand):
+    def run(self):
         show_input()
 
 
-class GdbLaunch(sublime_plugin.TextCommand):
-    def run(self, edit):
+class GdbLaunch(sublime_plugin.WindowCommand):
+    def run(self):
         global gdb_process
         global gdb_run_status
         if gdb_process == None or gdb_process.poll() != None:
@@ -746,7 +754,7 @@ class GdbLaunch(sublime_plugin.TextCommand):
             commandline = get_setting("commandline")
             gdb_process = subprocess.Popen(commandline, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
-            w = self.view.window()
+            w = sublime.active_window()
             w.set_layout(
                 get_setting("layout",
                     {
@@ -796,11 +804,11 @@ It seems you're not running gdb with the "mi" interpreter. Please add
         return not is_running()
 
 
-class GdbContinue(sublime_plugin.TextCommand):
-    def run(self, edit):
+class GdbContinue(sublime_plugin.WindowCommand):
+    def run(self):
         global gdb_cursor_position
         gdb_cursor_position = 0
-        update_view_markers(self.view)
+        update_view_markers()
         resume()
 
     def is_enabled(self):
@@ -822,19 +830,19 @@ class GdbExit(sublime_plugin.WindowCommand):
         return is_running()
 
 
-class GdbPause(sublime_plugin.TextCommand):
-    def run(self, edit):
+class GdbPause(sublime_plugin.WindowCommand):
+    def run(self):
         run_cmd("-gdb-interrupt")
 
     def is_enabled(self):
-        return is_running()
+        return is_running() and gdb_run_status != "stopped"
 
     def is_visible(self):
-        return is_running()
+        return is_running() and gdb_run_status != "stopped"
 
 
-class GdbStepOver(sublime_plugin.TextCommand):
-    def run(self, edit):
+class GdbStepOver(sublime_plugin.WindowCommand):
+    def run(self):
         run_cmd("-exec-next")
 
     def is_enabled(self):
@@ -844,8 +852,8 @@ class GdbStepOver(sublime_plugin.TextCommand):
         return is_running()
 
 
-class GdbStepInto(sublime_plugin.TextCommand):
-    def run(self, edit):
+class GdbStepInto(sublime_plugin.WindowCommand):
+    def run(self):
         run_cmd("-exec-step")
 
     def is_enabled(self):
@@ -855,8 +863,8 @@ class GdbStepInto(sublime_plugin.TextCommand):
         return is_running()
 
 
-class GdbNextInstruction(sublime_plugin.TextCommand):
-    def run(self, edit):
+class GdbNextInstruction(sublime_plugin.WindowCommand):
+    def run(self):
         run_cmd("-exec-next-instruction")
 
     def is_enabled(self):
@@ -866,8 +874,8 @@ class GdbNextInstruction(sublime_plugin.TextCommand):
         return is_running()
 
 
-class GdbStepOut(sublime_plugin.TextCommand):
-    def run(self, edit):
+class GdbStepOut(sublime_plugin.WindowCommand):
+    def run(self):
         run_cmd("-exec-finish")
 
     def is_enabled(self):
