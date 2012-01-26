@@ -460,9 +460,25 @@ class GDBVariablesView(GDBView):
         return self.get_variable_at_line(line, var_list[len(var_list) - 1].children)
 
 
+class GDBCallstackFrame:
+    def __init__(self, func, args):
+        self.func = func
+        self.args = args
+        self.lines = 0
+
+    def format(self):
+        output = "%s(" % self.func
+        for arg in self.args:
+            output += "%s = %s, " % (arg["name"], arg["value"])
+        output += ");\n"
+        self.lines = output.count("\n")
+        return output
+
+
 class GDBCallstackView(GDBView):
     def __init__(self):
         super(GDBCallstackView, self).__init__("GDB Callstack", settingsprefix="callstack")
+        self.frames = []
 
     def open(self):
         super(GDBCallstackView, self).open()
@@ -478,22 +494,36 @@ class GDBCallstackView(GDBView):
             gdb_cursor_position = 0
             update_view_markers()
             return
-        self.frames = listify(parse_result_line(line)["stack"]["frame"])
+        frames = listify(parse_result_line(line)["stack"]["frame"])
         args = listify(parse_result_line(run_cmd("-stack-list-arguments 1", True))["stack-args"]["frame"])
         self.clear()
-        for i in range(len(self.frames)):
-            output = "%s(" % self.frames[i]["func"]
-            for arg in args[i]["args"]:
-                output += "%s = %s, " % (arg["name"], arg["value"])
-            output += ");\n"
 
-            self.add_line(output)
+        self.frames = []
+        for i in range(len(frames)):
+            f = GDBCallstackFrame(frames[i]["func"], args[i]["args"])
+            self.frames.append(f)
+            self.add_line(f.format())
         self.update()
 
+    def update_marker(self, pos_scope, pos_icon):
+        if self.is_open():
+            line = 0
+            for i in range(gdb_stack_index):
+                line += self.frames[i].lines
+            view = self.get_view()
+            view.add_regions("sublimegdb.stackframe",
+                                [view.line(view.text_point(line, 0))],
+                                pos_scope, pos_icon, sublime.HIDDEN)
+
     def select(self, row):
-        if row < len(self.frames):
-            run_cmd("-stack-select-frame %d" % row)
-            update_cursor()
+        line = 0
+        for i in range(len(self.frames)):
+            fl = self.frames[i].lines
+            if row <= line + fl - 1:
+                run_cmd("-stack-select-frame %d" % i)
+                update_cursor()
+                break
+            line += fl
 
 gdb_session_view = GDBView("GDB Session", settingsprefix="session")
 gdb_console_view = GDBView("GDB Console", settingsprefix="console")
@@ -533,12 +563,7 @@ def update_view_markers(view=None):
     pos_icon = get_setting("position_icon", "bookmark")
     view.add_regions("sublimegdb.position", cursor, pos_scope, pos_icon, sublime.HIDDEN)
 
-    view = gdb_callstack_view.get_view()
-    if view != None:
-        view.add_regions("sublimegdb.stackframe",
-                            [view.line(view.text_point(gdb_stack_index, 0))],
-                            pos_scope, pos_icon, sublime.HIDDEN)
-
+    gdb_callstack_view.update_marker(pos_scope, pos_icon)
 
 count = 0
 
