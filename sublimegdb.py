@@ -321,11 +321,20 @@ class GDBRegister:
         self.index = index
         self.value = val
 
+    def format(self):
+        return "%s: %s" % (self.name, self.value)
+
+    def set_value(self, val):
+        self.value = val
+
+    def set_gdb_value(self, val):
+        run_cmd("-data-evaluate-expression $%s=%s", self.name, val)
+
 
 class GDBRegisterView(GDBView):
     def __init__(self):
         super(GDBRegisterView, self).__init__("GDB Registers", settingsprefix="registers")
-        self.names = None
+        self.values = None
 
     def open(self):
         super(GDBRegisterView, self).open()
@@ -345,14 +354,23 @@ class GDBRegisterView(GDBView):
     def update_values(self):
         if not self.should_update():
             return
-        if self.names == None:
-            self.names = self.get_names()
-        self.values = self.get_values()
+        if self.values == None:
+            names = self.get_names()
+            vals = self.get_values()
+            self.values = []
+            for i in range(len(names)):
+                idx = int(vals[i]["number"])
+                self.values.append(GDBRegister(names[idx], idx, vals[i]["value"]))
+        else:
+            regs = parse_result_line(run_cmd("-data-list-changed-registers", True))["changed-registers"]
+            regvals = parse_result_line(run_cmd("-data-list-register-values x %s" % " ".join(regs), True))["register-values"]
+            for i in range(len(regs)):
+                reg = int(regsvals[i]["number"])
+                self.values[reg].set_value(regvals[i]["value"])
+
         self.clear()
         for item in self.values:
-            log_debug(item)
-            index = int(item["number"])
-            self.add_line("%s: %s\n" % (self.names[index], item["value"]))
+            self.add_line("%s\n" % item.format())
 
 
 class GDBVariablesView(GDBView):
@@ -458,6 +476,27 @@ class GDBVariablesView(GDBView):
             elif var_list[i].line > line:
                 return self.get_variable_at_line(line, var_list[i - 1].children)
         return self.get_variable_at_line(line, var_list[len(var_list) - 1].children)
+
+    def expand_collapse_variable(self, view, expand=True, toggle=False):
+        row, col = view.rowcol(view.sel()[0].a)
+        if self.is_open() and view.id() == self.get_view().id():
+            var = self.get_variable_at_line(row)
+            if var and var.has_children():
+                if toggle:
+                    if var.is_expanded:
+                        var.collapse()
+                    else:
+                        var.expand()
+                elif expand:
+                    var.expand()
+                else:
+                    var.collapse()
+                pos = view.viewport_position()
+                self.update_view()
+                self.update()
+                self.scroll(row)
+                self.set_viewport_position(pos)
+                self.update()
 
 
 class GDBCallstackFrame:
@@ -930,28 +969,6 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
         update_view_markers(self.view)
 
 
-def expand_collapse_variable(view, expand=True, toggle=False):
-    row, col = view.rowcol(view.sel()[0].a)
-    if gdb_variables_view.is_open() and view.id() == gdb_variables_view.get_view().id():
-        var = gdb_variables_view.get_variable_at_line(row)
-        if var and var.has_children():
-            if toggle:
-                if var.is_expanded:
-                    var.collapse()
-                else:
-                    var.expand()
-            elif expand:
-                var.expand()
-            else:
-                var.collapse()
-            pos = view.viewport_position()
-            gdb_variables_view.update_view()
-            gdb_variables_view.update()
-            gdb_variables_view.scroll(row)
-            gdb_variables_view.set_viewport_position(pos)
-            gdb_variables_view.update()
-
-
 class GdbClick(sublime_plugin.TextCommand):
     def run(self, edit):
         if not is_running():
@@ -959,7 +976,7 @@ class GdbClick(sublime_plugin.TextCommand):
 
         row, col = self.view.rowcol(self.view.sel()[0].a)
         if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
-            expand_collapse_variable(self.view, toggle=True)
+            gdb_variables_view.expand_collapse_variable(self.view, toggle=True)
         elif gdb_callstack_view.is_open() and self.view.id() == gdb_callstack_view.get_view().id():
             gdb_callstack_view.select(row)
 
@@ -969,7 +986,7 @@ class GdbClick(sublime_plugin.TextCommand):
 
 class GdbCollapseVariable(sublime_plugin.TextCommand):
     def run(self, edit):
-        expand_collapse_variable(self.view, expand=False)
+        gdb_variables_view.expand_collapse_variable(self.view, expand=False)
 
     def is_enabled(self):
         if not is_running():
@@ -982,7 +999,7 @@ class GdbCollapseVariable(sublime_plugin.TextCommand):
 
 class GdbExpandVariable(sublime_plugin.TextCommand):
     def run(self, edit):
-        expand_collapse_variable(self.view)
+        gdb_variables_view.expand_collapse_variable(self.view)
 
     def is_enabled(self):
         if not is_running():
