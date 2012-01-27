@@ -1,6 +1,11 @@
 [
 
     {
+        "command": "gdb_edit_register",
+        "keys": ["enter"],
+        "context": [{"key": "gdb_running"}, {"key": "gdb_register_view"}]
+    },
+    {
         "command": "gdb_edit_variable",
         "keys": ["enter"],
         "context": [{"key": "gdb_running"}, {"key": "gdb_variables_view"}]

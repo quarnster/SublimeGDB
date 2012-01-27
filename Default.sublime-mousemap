@@ -10,6 +10,6 @@
         "button": "button1", "count": 2,
         "press_command": "drag_select",
         "press_args": {"by": "words"},
-        "command": "gdb_edit_variable"
+        "command": "gdb_double_click"
     }
 ]

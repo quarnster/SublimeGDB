@@ -229,7 +229,7 @@ class GDBVariable:
         line = run_cmd("-var-assign %s \"%s\"" % (self.get_name(), val), True)
         if get_result(line) == "done":
             self.valuepair["value"] = parse_result_line(line)["value"]
-            gdb_variables_view.update_view()
+            gdb_variables_view.update_variables(True)
         else:
             err = line[line.find("msg=") + 4:]
             sublime.status_message("Error: %s" % err)
@@ -247,7 +247,7 @@ class GDBVariable:
         return None
 
     def edit(self):
-        sublime.active_window().show_input_panel("New value", self.valuepair["value"], self.edit_on_done, None, None)
+        sublime.active_window().show_input_panel("%s =" % self["exp"], self.valuepair["value"], self.edit_on_done, None, None)
 
     def get_name(self):
         return self.valuepair["name"]
@@ -320,15 +320,28 @@ class GDBRegister:
         self.name = name
         self.index = index
         self.value = val
+        self.line = 0
+        self.lines = 0
 
-    def format(self):
-        return "%s: %s" % (self.name, self.value)
+    def format(self, line=0):
+        output = "%s: %s\n" % (self.name, self.value)
+        self.line = line
+        line += output.count("\n")
+        self.lines = line - self.line
+        return (output, line)
 
     def set_value(self, val):
         self.value = val
 
     def set_gdb_value(self, val):
-        run_cmd("-data-evaluate-expression $%s=%s", self.name, val)
+        run_cmd("-data-evaluate-expression $%s=%s" % (self.name, val))
+
+    def edit_on_done(self, val):
+        self.set_gdb_value(val)
+        gdb_register_view.update_values()
+
+    def edit(self):
+        sublime.active_window().show_input_panel("$%s =" % self.name, self.value, self.edit_on_done, None, None)
 
 
 class GDBRegisterView(GDBView):
@@ -354,6 +367,7 @@ class GDBRegisterView(GDBView):
     def update_values(self):
         if not self.should_update():
             return
+        dirtylist = []
         if self.values == None:
             names = self.get_names()
             vals = self.get_values()
@@ -362,15 +376,41 @@ class GDBRegisterView(GDBView):
                 idx = int(vals[i]["number"])
                 self.values.append(GDBRegister(names[idx], idx, vals[i]["value"]))
         else:
-            regs = parse_result_line(run_cmd("-data-list-changed-registers", True))["changed-registers"]
+            dirtylist = regs = parse_result_line(run_cmd("-data-list-changed-registers", True))["changed-registers"]
             regvals = parse_result_line(run_cmd("-data-list-register-values x %s" % " ".join(regs), True))["register-values"]
             for i in range(len(regs)):
                 reg = int(regvals[i]["number"])
                 self.values[reg].set_value(regvals[i]["value"])
 
         self.clear()
+        line = 0
         for item in self.values:
-            self.add_line("%s\n" % item.format())
+            output, line = item.format(line)
+            self.add_line(output)
+        self.update()
+        regions = []
+        v = self.get_view()
+        for dirty in dirtylist:
+            i = int(dirty)
+            region = v.full_line(v.text_point(self.values[i].line, 0))
+            if self.values[i].lines > 1:
+                region = region.cover(v.full_line(v.text_point(self.values[i].line + self.values[i].lines - 1, 0)))
+
+            regions.append(region)
+        v.add_regions("sublimegdb.dirtyregisters", regions,
+                        get_setting("changed_variable_scope", "entity.name.class"),
+                        get_setting("changed_variable_icon", ""),
+                        sublime.DRAW_OUTLINED)
+
+    def get_register_at_line(self, line):
+        if self.values == None:
+            return None
+        for i in range(len(self.values)):
+            if self.values[i].line == line:
+                return self.values[i]
+            elif self.values[i].line > line:
+                return self.values[i - 1]
+        return None
 
 
 class GDBVariablesView(GDBView):
@@ -984,6 +1024,19 @@ class GdbClick(sublime_plugin.TextCommand):
         return is_running()
 
 
+class GdbDoubleClick(sublime_plugin.TextCommand):
+    def run(self, edit):
+        if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
+            self.view.run_command("gdb_edit_variable")
+        else:
+            self.view.run_command("gdb_edit_register")
+
+    def is_enabled(self):
+        return is_running() and \
+                ((gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id()) or \
+                 (gdb_register_view.is_open() and self.view.id() == gdb_register_view.get_view().id()))
+
+
 class GdbCollapseVariable(sublime_plugin.TextCommand):
     def run(self, edit):
         gdb_variables_view.expand_collapse_variable(self.view, expand=False)
@@ -1013,18 +1066,33 @@ class GdbExpandVariable(sublime_plugin.TextCommand):
 class GdbEditVariable(sublime_plugin.TextCommand):
     def run(self, edit):
         row, col = self.view.rowcol(self.view.sel()[0].a)
-        if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
-            var = gdb_variables_view.get_variable_at_line(row)
-            if var.is_editable():
-                var.edit()
-            else:
-                sublime.status_message("Variable isn't editable")
+        var = gdb_variables_view.get_variable_at_line(row)
+        if var.is_editable():
+            var.edit()
+        else:
+            sublime.status_message("Variable isn't editable")
 
     def is_enabled(self):
         if not is_running():
             return False
-        row, col = self.view.rowcol(self.view.sel()[0].a)
         if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
+            return True
+        return False
+
+
+class GdbEditRegister(sublime_plugin.TextCommand):
+    def run(self, edit):
+        row, col = self.view.rowcol(self.view.sel()[0].a)
+        reg = gdb_register_view.get_register_at_line(row)
+        if not reg is None:
+            reg.edit()
+
+    def is_enabled(self):
+        if not is_running():
+            return False
+        print gdb_register_view.is_open()
+        print self.view.id() == gdb_register_view.get_view().id()
+        if gdb_register_view.is_open() and self.view.id() == gdb_register_view.get_view().id():
             return True
         return False
 
@@ -1035,6 +1103,8 @@ class GdbEventListener(sublime_plugin.EventListener):
             return is_running() == operand
         elif key == "gdb_variables_view":
             return gdb_variables_view.is_open() and view.id() == gdb_variables_view.get_view().id()
+        elif key == "gdb_register_view":
+            return gdb_register_view.is_open() and view.id() == gdb_register_view.get_view().id()
         return None
 
     def on_activated(self, view):
