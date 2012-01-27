@@ -365,7 +365,7 @@ class GDBRegisterView(GDBView):
             regs = parse_result_line(run_cmd("-data-list-changed-registers", True))["changed-registers"]
             regvals = parse_result_line(run_cmd("-data-list-register-values x %s" % " ".join(regs), True))["register-values"]
             for i in range(len(regs)):
-                reg = int(regsvals[i]["number"])
+                reg = int(regvals[i]["number"])
                 self.values[reg].set_value(regvals[i]["value"])
 
         self.clear()
