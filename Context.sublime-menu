@@ -13,23 +13,27 @@
     { "command": "gdb_exit", "caption": "Stop Debugging"},
     { "caption": "-", "id": "gdb_views" },
     {
-        "caption": "SublimeGDB: Open Register View",
+        "caption": "Open Register View",
         "command": "gdb_open_register_view"
     },
     {
-        "caption": "SublimeGDB: Open Session View",
+        "caption": "Open Disassembly View",
+        "command": "gdb_open_disassembly_view"
+    },
+    {
+        "caption": "Open Session View",
         "command": "gdb_open_session_view"
     },
     {
-        "caption": "SublimeGDB: Open Console View",
+        "caption": "Open Console View",
         "command": "gdb_open_console_view"
     },
     {
-        "caption": "SublimeGDB: Open Callstack View",
+        "caption": "Open Callstack View",
         "command": "gdb_open_callstack_view"
     },
     {
-        "caption": "SublimeGDB: Open Variables View",
+        "caption": "Open Variables View",
         "command": "gdb_open_variables_view"
     }
 ]

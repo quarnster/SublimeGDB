@@ -68,5 +68,9 @@
     {
         "caption": "SublimeGDB: Open Variables View",
         "command": "gdb_open_variables_view"
+    },
+    {
+        "caption": "SublimeGDB: Open Disassembly View",
+        "command": "gdb_open_disassembly_view"
     }
 ]

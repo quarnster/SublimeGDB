@@ -57,5 +57,15 @@
         "command": "gdb_step_out",
         "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
         "keys": ["shift+f11"]
+    },
+    {
+        "command": "gdb_open_register_view",
+        "context": [{"key": "gdb_register_view_open", "operator": "equal", "operand": false }],
+        "keys": ["ctrl+alt+g"]
+    },
+    {
+        "command": "gdb_open_disassembly_view",
+        "context": [{"key": "gdb_disassembly_view_open", "operator": "equal", "operand": false }],
+        "keys": ["ctrl+f11"]
     }
 ]

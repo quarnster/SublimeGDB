@@ -55,5 +55,8 @@
     "callstack_open": true,
 
     "registers_group": 2,
-    "registers_open": false
+    "registers_open": false,
+
+    "disassembly_group": 2,
+    "disassembly_open": false
 }

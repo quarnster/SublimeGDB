@@ -607,12 +607,56 @@ class GDBCallstackView(GDBView):
                 break
             line += fl
 
+
+class GDBDisassemblyView(GDBView):
+    def __init__(self):
+        super(GDBDisassemblyView, self).__init__("GDB Disassembly", settingsprefix="disassembly")
+        self.start = -1
+        self.end = -1
+
+    def open(self):
+        super(GDBDisassemblyView, self).open()
+        if self.is_open() and gdb_run_status == "stopped":
+            self.update_disassembly()
+
+    def update_disassembly(self):
+        if not self.should_update():
+            return
+        pc = parse_result_line(run_cmd("-data-evaluate-expression $pc", True))["value"]
+        if " " in pc:
+            pc = pc[:pc.find(" ")]
+        pc = int(pc, 16)
+        if not (pc >= self.start and pc <= self.end):
+            l = run_cmd("-data-disassemble -s $pc -n 50 -- 1", True)
+            asms = parse_result_line(l)
+            self.clear()
+            l = listify(asms["asm_insns"]["src_and_asm_line"])
+            self.start = -1
+            for src_asm in l:
+                line = src_asm["line"]
+                file = src_asm["file"]
+                self.add_line("%s:%s" % (file, line))
+                for asm in src_asm["line_asm_insn"]:
+                    self.add_line("\n%s: %s    ; %s+%s" % (asm["address"], asm["inst"], asm["func-name"], asm["offset"]))
+                    if self.start == -1:
+                        self.start = int(asm["address"], 16)
+                    self.end = int(asm["address"], 16)
+            self.update()
+        view = self.get_view()
+        pos_scope = get_setting("position_scope", "entity.name.class")
+        pos_icon = get_setting("position_icon", "bookmark")
+        view.add_regions("sublimegdb.programcounter",
+                            [view.find("^0x[0]*%x:" % pc, 0)],
+                            pos_scope, pos_icon, sublime.HIDDEN)
+
+
 gdb_session_view = GDBView("GDB Session", settingsprefix="session")
 gdb_console_view = GDBView("GDB Console", settingsprefix="console")
 gdb_variables_view = GDBVariablesView()
 gdb_callstack_view = GDBCallstackView()
 gdb_register_view = GDBRegisterView()
-gdb_views = [gdb_session_view, gdb_console_view, gdb_variables_view, gdb_callstack_view, gdb_register_view]
+gdb_disassembly_view = GDBDisassemblyView()
+gdb_views = [gdb_session_view, gdb_console_view, gdb_variables_view, gdb_callstack_view, gdb_register_view, gdb_disassembly_view]
 
 
 def extract_breakpoints(line):
@@ -786,6 +830,7 @@ def update_cursor():
     update_view_markers()
     gdb_variables_view.update_variables(sameFrame)
     gdb_register_view.update_values()
+    gdb_disassembly_view.update_disassembly()
 
 
 def session_ended_status_message():
@@ -1104,10 +1149,14 @@ class GdbEventListener(sublime_plugin.EventListener):
     def on_query_context(self, view, key, operator, operand, match_all):
         if key == "gdb_running":
             return is_running() == operand
-        elif key == "gdb_variables_view":
-            return gdb_variables_view.is_open() and view.id() == gdb_variables_view.get_view().id()
-        elif key == "gdb_register_view":
-            return gdb_register_view.is_open() and view.id() == gdb_register_view.get_view().id()
+        elif key.startswith("gdb_"):
+            v = gdb_variables_view
+            if key.startswith("gdb_register_view"):
+                v = gdb_register_view
+            if key.endswith("open"):
+                return v.is_open() == operand
+            else:
+                return (view.id() == v.id()) == operand
         return None
 
     def on_activated(self, view):
@@ -1178,3 +1227,14 @@ class GdbOpenRegisterView(sublime_plugin.WindowCommand):
 
     def is_visible(self):
         return not gdb_register_view.is_open()
+
+
+class GdbOpenDisassemblyView(sublime_plugin.WindowCommand):
+    def run(self):
+        gdb_disassembly_view.open()
+
+    def is_enabled(self):
+        return not gdb_disassembly_view.is_open()
+
+    def is_visible(self):
+        return not gdb_disassembly_view.is_open()
