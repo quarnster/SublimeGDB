@@ -375,7 +375,7 @@ class GDBRegisterView(GDBView):
             names = self.get_names()
             vals = self.get_values()
             self.values = []
-            for i in range(len(names)):
+            for i in range(len(vals)):
                 idx = int(vals[i]["number"])
                 self.values.append(GDBRegister(names[idx], idx, vals[i]["value"]))
         else:
@@ -619,6 +619,11 @@ class GDBDisassemblyView(GDBView):
         if self.is_open() and gdb_run_status == "stopped":
             self.update_disassembly()
 
+    def clear(self):
+        super(GDBDisassemblyView, self).clear()
+        self.start = -1
+        self.end = -1
+
     def update_disassembly(self):
         if not self.should_update():
             return
@@ -627,7 +632,7 @@ class GDBDisassemblyView(GDBView):
             pc = pc[:pc.find(" ")]
         pc = int(pc, 16)
         if not (pc >= self.start and pc <= self.end):
-            l = run_cmd("-data-disassemble -s $pc -n 50 -- 1", True)
+            l = run_cmd("-data-disassemble -s $pc -e \"$pc+200\" -- 1", True)
             asms = parse_result_line(l)
             self.clear()
             l = listify(asms["asm_insns"]["src_and_asm_line"])
@@ -635,9 +640,9 @@ class GDBDisassemblyView(GDBView):
             for src_asm in l:
                 line = src_asm["line"]
                 file = src_asm["file"]
-                self.add_line("%s:%s" % (file, line))
+                self.add_line("%s:%s\n" % (file, line))
                 for asm in src_asm["line_asm_insn"]:
-                    self.add_line("\n%s: %s    ; %s+%s" % (asm["address"], asm["inst"], asm["func-name"], asm["offset"]))
+                    self.add_line("%s: %s    ; %s+%s\n" % (asm["address"], asm["inst"], asm["func-name"], asm["offset"]))
                     if self.start == -1:
                         self.start = int(asm["address"], 16)
                     self.end = int(asm["address"], 16)
