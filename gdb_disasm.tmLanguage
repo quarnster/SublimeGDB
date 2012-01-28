@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>GDB Disassembly</string>
+    <key>patterns</key>
+    <array>
+        <dict>
+            <key>match</key>
+            <string>.+:([0-9]+)$</string>
+            <key>name</key>
+            <string>string</string>
+        </dict>
+
+        <dict>
+            <key>match</key>
+            <string>(%)([a-z]+)</string>
+            <key>name</key>
+            <string>keyword.</string>
+        </dict>
+        <dict>
+            <key>match</key>
+            <string> \b([a-z]+) </string>
+            <key>name</key>
+            <string>support.function.disasm</string>
+        </dict>
+        <dict>
+            <key>match</key>
+            <string>^0x[0-9a-z]+:</string>
+            <key>name</key>
+            <string>keyword</string>
+        </dict>
+        <dict>
+            <key>match</key>
+            <string>\b[-$]*[0-9a-fx]+</string>
+            <key>name</key>
+            <string>constant.other.disasm</string>
+        </dict>
+        <dict>
+            <key>match</key>
+            <string>#.*$</string>
+            <key>name</key>
+            <string>comment</string>
+        </dict>
+    </array>
+    <key>scopeName</key>
+    <string>source.disasm</string>
+    <key>uuid</key>
+    <string>932CA89E-7D79-4406-9F53-8BC58525560C</string>
+</dict>
+</plist>

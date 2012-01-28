@@ -354,6 +354,8 @@ class GDBRegisterView(GDBView):
 
     def open(self):
         super(GDBRegisterView, self).open()
+        self.set_syntax("Packages/SublimeGDB/gdb_registers.tmLanguage")
+        self.get_view().settings().set("word_wrap", False)
         if self.is_open() and gdb_run_status == "stopped":
             self.update_values()
 
@@ -616,6 +618,8 @@ class GDBDisassemblyView(GDBView):
 
     def open(self):
         super(GDBDisassemblyView, self).open()
+        self.set_syntax("Packages/SublimeGDB/gdb_disasm.tmLanguage")
+        self.get_view().settings().set("word_wrap", False)
         if self.is_open() and gdb_run_status == "stopped":
             self.update_disassembly()
 
@@ -642,7 +646,8 @@ class GDBDisassemblyView(GDBView):
                 file = src_asm["file"]
                 self.add_line("%s:%s\n" % (file, line))
                 for asm in src_asm["line_asm_insn"]:
-                    self.add_line("%s: %s    ; %s+%s\n" % (asm["address"], asm["inst"], asm["func-name"], asm["offset"]))
+                    line = "%s: %s" % (asm["address"], asm["inst"])
+                    self.add_line("%-80s # %s+%s\n" % (line, asm["func-name"], asm["offset"]))
                     if self.start == -1:
                         self.start = int(asm["address"], 16)
                     self.end = int(asm["address"], 16)
@@ -1161,7 +1166,7 @@ class GdbEventListener(sublime_plugin.EventListener):
             if key.endswith("open"):
                 return v.is_open() == operand
             else:
-                return (view.id() == v.id()) == operand
+                return (view.id() == v.get_view().id()) == operand
         return None
 
     def on_activated(self, view):

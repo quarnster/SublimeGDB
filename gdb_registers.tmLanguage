@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>GDB Registers</string>
+    <key>patterns</key>
+    <array>
+        <dict>
+            <key>match</key>
+            <string>^.+:</string>
+            <key>name</key>
+            <string>keyword.gdbregs</string>
+        </dict>
+        <dict>
+            <key>match</key>
+            <string>\b[-$]*[0-9a-fx]+</string>
+            <key>name</key>
+            <string>constant.other.gdbregs</string>
+        </dict>
+    </array>
+    <key>scopeName</key>
+    <string>source.gdbregs</string>
+    <key>uuid</key>
+    <string>04501C9F-007A-423E-8409-4560143F190E</string>
+</dict>
+</plist>
