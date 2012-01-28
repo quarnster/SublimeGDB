@@ -23,6 +23,7 @@ freely, subject to the following restrictions:
 import sublime
 import sublime_plugin
 import subprocess
+import struct
 import threading
 import time
 import traceback
@@ -327,7 +328,19 @@ class GDBRegister:
         self.lines = 0
 
     def format(self, line=0):
-        output = "%s: %s\n" % (self.name, self.value)
+        val = self.value
+        if  "{" not in val:
+            valh = int(val, 16)&0xffffffffffffffffffffffffffffffff
+            six4 = False
+            if valh > 0xffffffff:
+                six4 = True
+            val = struct.pack("Q" if six4 else "I", valh)
+            valf = struct.unpack("d" if six4 else "f", val)[0]
+            valI = struct.unpack("Q" if six4 else "I", val)[0]
+            vali = struct.unpack("q" if six4 else "i", val)[0]
+
+            val = "0x%016x %16.8f %020d %020d" % (valh, valf, valI, vali)
+        output = "%8s: %s\n" % (self.name, val)
         self.line = line
         line += output.count("\n")
         self.lines = line - self.line
@@ -337,6 +350,12 @@ class GDBRegister:
         self.value = val
 
     def set_gdb_value(self, val):
+        if "." in val:
+            if val.endswith("f"):
+                val = struct.unpack("I", struct.pack("f", float(val[:-1])))[0]
+            else:
+                val = struct.unpack("Q", struct.pack("d", float(val)))[0]
+
         run_cmd("-data-evaluate-expression $%s=%s" % (self.name, val))
 
     def edit_on_done(self, val):
@@ -1069,8 +1088,9 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
         if fn not in breakpoints:
             breakpoints[fn] = []
 
-        line, col = self.view.rowcol(self.view.sel()[0].a)
-        toggle_breakpoint(fn, line + 1)
+        for sel in self.view.sel():
+            line, col = self.view.rowcol(sel.a)
+            toggle_breakpoint(fn, line + 1)
         update_view_markers(self.view)
 
 
