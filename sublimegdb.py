@@ -639,7 +639,11 @@ class GDBDisassemblyView(GDBView):
             l = run_cmd("-data-disassemble -s $pc -e \"$pc+200\" -- 1", True)
             asms = parse_result_line(l)
             self.clear()
-            l = listify(asms["asm_insns"]["src_and_asm_line"])
+            asms = asms["asm_insns"]
+            if "src_and_asm_line" in asms:
+                l = listify(["src_and_asm_line"])
+            else:
+                l = []
             self.start = -1
             for src_asm in l:
                 line = src_asm["line"]
@@ -653,10 +657,14 @@ class GDBDisassemblyView(GDBView):
                     self.end = int(asm["address"], 16)
             self.update()
         view = self.get_view()
-        pos_scope = get_setting("position_scope", "entity.name.class")
-        pos_icon = get_setting("position_icon", "bookmark")
-        view.add_regions("sublimegdb.programcounter",
-                            [view.find("^0x[0]*%x:" % pc, 0)],
+        reg = view.find("^0x[0]*%x:" % pc, 0)
+        if reg is None:
+            view.erase_regions("sublimegdb.programcounter")
+        else:
+            pos_scope = get_setting("position_scope", "entity.name.class")
+            pos_icon = get_setting("position_icon", "bookmark")
+            view.add_regions("sublimegdb.programcounter",
+                            [reg],
                             pos_scope, pos_icon, sublime.HIDDEN)
 
 
@@ -835,7 +843,6 @@ def update_cursor():
     syntax = file_view.settings().get("syntax")
     gdb_variables_view.set_syntax(syntax)
     gdb_callstack_view.set_syntax(syntax)
-    gdb_register_view.set_syntax(syntax)
 
     update_view_markers()
     gdb_variables_view.update_variables(sameFrame)
