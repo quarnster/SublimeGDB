@@ -125,6 +125,9 @@ class GDBView(object):
         self.view.set_name(self.name)
         self.view.set_scratch(True)
         self.view.set_read_only(True)
+        # Setting command_mode to false so that vintage
+        # does not eat the "enter" keybinding
+        self.view.settings().set('command_mode', False)
         self.closed = False
 
     def is_closed(self):
