@@ -10,36 +10,35 @@
             <key>match</key>
             <string>.+:([0-9]+)$</string>
             <key>name</key>
-            <string>string</string>
+            <string>string.filename</string>
         </dict>
-
         <dict>
             <key>match</key>
-            <string>(%)([a-z]+)</string>
+            <string>\b0x[0-9a-f]+</string>
             <key>name</key>
-            <string>keyword.</string>
+            <string>constant.other.hex.disasm</string>
         </dict>
         <dict>
             <key>match</key>
-            <string> \b([a-z]+) </string>
-            <key>name</key>
-            <string>support.function.disasm</string>
-        </dict>
-        <dict>
-            <key>match</key>
-            <string>^0x[0-9a-z]+:</string>
-            <key>name</key>
-            <string>keyword</string>
-        </dict>
-        <dict>
-            <key>match</key>
-            <string>\b[-$]*[0-9a-fx]+</string>
+            <string>\b[0-9]+</string>
             <key>name</key>
             <string>constant.other.disasm</string>
         </dict>
         <dict>
             <key>match</key>
-            <string>#.*$</string>
+            <string>[\w]+</string>
+            <key>name</key>
+            <string>keyword.variable</string>
+        </dict>
+        <dict>
+            <key>match</key>
+            <string> \b([a-z\.]+) </string>
+            <key>name</key>
+            <string>support.function.disasm</string>
+        </dict>
+        <dict>
+            <key>match</key>
+            <string>(;|#)[^\d].*$</string>
             <key>name</key>
             <string>comment</string>
         </dict>

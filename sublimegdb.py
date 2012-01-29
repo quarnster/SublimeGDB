@@ -368,7 +368,7 @@ class GDBRegister:
 
 class GDBRegisterView(GDBView):
     def __init__(self):
-        super(GDBRegisterView, self).__init__("GDB Registers", settingsprefix="registers")
+        super(GDBRegisterView, self).__init__("GDB Registers", s=False, settingsprefix="registers")
         self.values = None
 
     def open(self):
@@ -631,7 +631,7 @@ class GDBCallstackView(GDBView):
 
 class GDBDisassemblyView(GDBView):
     def __init__(self):
-        super(GDBDisassemblyView, self).__init__("GDB Disassembly", settingsprefix="disassembly")
+        super(GDBDisassemblyView, self).__init__("GDB Disassembly", s=False, settingsprefix="disassembly")
         self.start = -1
         self.end = -1
 
@@ -660,7 +660,7 @@ class GDBDisassemblyView(GDBView):
             self.clear()
             asms = asms["asm_insns"]
             if "src_and_asm_line" in asms:
-                l = listify(["src_and_asm_line"])
+                l = listify(asms["src_and_asm_line"])
             else:
                 l = []
             self.start = -1
@@ -671,9 +671,10 @@ class GDBDisassemblyView(GDBView):
                 for asm in src_asm["line_asm_insn"]:
                     line = "%s: %s" % (asm["address"], asm["inst"])
                     self.add_line("%-80s # %s+%s\n" % (line, asm["func-name"], asm["offset"]))
-                    if self.start == -1:
-                        self.start = int(asm["address"], 16)
-                    self.end = int(asm["address"], 16)
+                    addr = int(asm["address"], 16)
+                    if self.start == -1 or addr < self.start:
+                        self.start = addr
+                    self.end = addr
             self.update()
         view = self.get_view()
         reg = view.find("^0x[0]*%x:" % pc, 0)
