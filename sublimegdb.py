@@ -858,8 +858,9 @@ def update_cursor():
         sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
 
     sameFrame = gdb_stack_frame != None and \
-                gdb_stack_frame["func"] == currFrame["func"] and \
-                gdb_stack_frame["shlibname"] == currFrame["shlibname"]
+                gdb_stack_frame["func"] == currFrame["func"]
+    if sameFrame and "shlibname" in currFrame and "shlibname" in gdb_stack_frame:
+        sameFrame = currFrame["shlibname"] == gdb_stack_frame["shlibname"]
     if sameFrame and "fullname" in currFrame and "fullname" in gdb_stack_frame:
         sameFrame = currFrame["fullname"] == gdb_stack_frame["fullname"]
 
