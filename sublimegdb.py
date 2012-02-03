@@ -51,6 +51,7 @@ gdb_lastresult = ""
 gdb_lastline = ""
 gdb_cursor = ""
 gdb_cursor_position = 0
+gdb_last_cursor_view = None
 
 gdb_process = None
 gdb_stack_frame = None
@@ -66,12 +67,6 @@ def log_debug(line):
 
 
 class GDBView(object):
-    LINE = 0
-    FOLD_ALL = 1
-    CLEAR = 2
-    SCROLL = 3
-    VIEWPORT_POSITION = 4
-
     def __init__(self, name, s=True, settingsprefix=None):
         self.queue = Queue.Queue()
         self.name = name
@@ -103,22 +98,22 @@ class GDBView(object):
 
     def add_line(self, line):
         if self.is_open():
-            self.queue.put((GDBView.LINE, line))
+            self.queue.put((self.do_add_line, line))
             sublime.set_timeout(self.update, 0)
 
     def scroll(self, line):
         if self.is_open():
-            self.queue.put((GDBView.SCROLL, line))
+            self.queue.put((self.do_scroll, line))
             sublime.set_timeout(self.update, 0)
 
     def set_viewport_position(self, pos):
         if self.is_open():
-            self.queue.put((GDBView.VIEWPORT_POSITION, pos))
+            self.queue.put((self.do_set_viewport_position, pos))
             sublime.set_timeout(self.update, 0)
 
     def clear(self):
         if self.is_open():
-            self.queue.put((GDBView.CLEAR, None))
+            self.queue.put((self.do_clear, None))
             sublime.set_timeout(self.update, 0)
 
     def create_view(self):
@@ -139,48 +134,49 @@ class GDBView(object):
 
     def fold_all(self):
         if self.is_open():
-            self.queue.put((GDBView.FOLD_ALL, None))
+            self.queue.put((self.do_fold_all, None))
 
     def get_view(self):
         return self.view
+
+    def do_add_line(self, line):
+        self.view.set_read_only(False)
+        e = self.view.begin_edit()
+        self.view.insert(e, self.view.size(), line)
+        self.view.end_edit(e)
+        self.view.set_read_only(True)
+        if self.doScroll:
+            self.view.show(self.view.size())
+
+    def do_fold_all(self, data):
+        self.view.run_command("fold_all")
+
+    def do_clear(self, data):
+        self.view.set_read_only(False)
+        e = self.view.begin_edit()
+        self.view.erase(e, sublime.Region(0, self.view.size()))
+        self.view.end_edit(e)
+        self.view.set_read_only(True)
+
+    def do_scroll(self, data):
+        self.view.run_command("goto_line", {"line": data + 1})
+
+    def do_set_viewport_position(self, data):
+        self.view.set_viewport_position(data, True)
 
     def update(self):
         if not self.is_open():
             return
         insert = ""
         try:
-            while True:
-                cmd, data = self.queue.get_nowait()
-                if cmd == GDBView.LINE:
-                    insert += data
-                elif cmd == GDBView.FOLD_ALL:
-                    self.view.run_command("fold_all")
-                elif cmd == GDBView.CLEAR:
-                    insert = ""
-                    self.view.set_read_only(False)
-                    e = self.view.begin_edit()
-                    self.view.erase(e, sublime.Region(0, self.view.size()))
-                    self.view.end_edit(e)
-                    self.view.set_read_only(True)
-                elif cmd == GDBView.SCROLL:
-                    self.view.run_command("goto_line", {"line": data + 1})
-                elif cmd == GDBView.VIEWPORT_POSITION:
-                    self.view.set_viewport_position(data, True)
-                self.queue.task_done()
-        except Queue.Empty:
-            # get_nowait throws an exception when there's nothing..
-            pass
+            while not self.queue.empty():
+                cmd, data = self.queue.get()
+                try:
+                    cmd(data)
+                finally:
+                    self.queue.task_done()
         except:
             traceback.print_exc()
-        finally:
-            if len(insert) > 0:
-                self.view.set_read_only(False)
-                e = self.view.begin_edit()
-                self.view.insert(e, self.view.size(), insert)
-                self.view.end_edit(e)
-                self.view.set_read_only(True)
-                if self.doScroll:
-                    self.view.show(self.view.size())
 
 
 class GDBVariable:
@@ -590,6 +586,11 @@ class GDBCallstackView(GDBView):
         if self.is_open() and gdb_run_status == "stopped":
             self.update_callstack()
 
+    def do_clear(self, data):
+        super(GDBCallstackView, self).do_clear(data)
+        if self.is_open():
+            self.get_view().erase_regions("sublimegdb.stackframe")
+
     def update_callstack(self):
         if not self.should_update():
             return
@@ -720,13 +721,17 @@ def update_view_markers(view=None):
                         get_setting("breakpoint_scope", "keyword.gdb"),
                         get_setting("breakpoint_icon", "circle"),
                         sublime.HIDDEN)
-    cursor = []
-
-    if fn == gdb_cursor and gdb_cursor_position != 0:
-        cursor.append(view.full_line(view.text_point(gdb_cursor_position - 1, 0)))
 
     pos_scope = get_setting("position_scope", "entity.name.class")
     pos_icon = get_setting("position_icon", "bookmark")
+
+    cursor = []
+    if fn == gdb_cursor and gdb_cursor_position != 0:
+        cursor.append(view.full_line(view.text_point(gdb_cursor_position - 1, 0)))
+    global gdb_last_cursor_view
+    if not gdb_last_cursor_view is None:
+        gdb_last_cursor_view.erase_regions("sublimegdb.position")
+    gdb_last_cursor_view = view
     view.add_regions("sublimegdb.position", cursor, pos_scope, pos_icon, sublime.HIDDEN)
 
     gdb_callstack_view.update_marker(pos_scope, pos_icon)
@@ -856,6 +861,8 @@ def update_cursor():
         gdb_cursor_position = int(currFrame["line"])
         sublime.active_window().focus_group(get_setting("file_group", 0))
         sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
+    else:
+        gdb_cursor_position = 0
 
     sameFrame = gdb_stack_frame != None and \
                 gdb_stack_frame["func"] == currFrame["func"]
@@ -923,6 +930,10 @@ def gdboutput(pipe):
     gdb_cursor_position = 0
     gdb_run_status = None
     sublime.set_timeout(update_view_markers, 0)
+    gdb_callstack_view.clear()
+    gdb_register_view.clear()
+    gdb_disassembly_view.clear()
+    gdb_variables_view.clear()
 
 
 def show_input():
