@@ -444,6 +444,7 @@ class GDBVariablesView(GDBView):
 
     def open(self):
         super(GDBVariablesView, self).open()
+        self.set_syntax("Packages/C++/C++.tmLanguage")
         if self.is_open() and gdb_run_status == "stopped":
             self.update_variables(False)
 
@@ -585,6 +586,7 @@ class GDBCallstackView(GDBView):
 
     def open(self):
         super(GDBCallstackView, self).open()
+        self.set_syntax("Packages/C++/C++.tmLanguage")
         if self.is_open() and gdb_run_status == "stopped":
             self.update_callstack()
 
@@ -848,21 +850,22 @@ def update_cursor():
 
     currFrame = parse_result_line(run_cmd("-stack-info-frame", True))["frame"]
     gdb_stack_index = int(currFrame["level"])
-    gdb_cursor = currFrame["fullname"]
-    gdb_cursor_position = int(currFrame["line"])
-    sublime.active_window().focus_group(get_setting("file_group", 0))
-    file_view = sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
+
+    if "fullname" in currFrame:
+        gdb_cursor = currFrame["fullname"]
+        gdb_cursor_position = int(currFrame["line"])
+        sublime.active_window().focus_group(get_setting("file_group", 0))
+        sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
 
     sameFrame = gdb_stack_frame != None and \
-                gdb_stack_frame["fullname"] == currFrame["fullname"] and \
-                gdb_stack_frame["func"] == currFrame["func"]
+                gdb_stack_frame["func"] == currFrame["func"] and \
+                gdb_stack_frame["shlibname"] == currFrame["shlibname"]
+    if sameFrame and "fullname" in currFrame and "fullname" in gdb_stack_frame:
+        sameFrame = currFrame["fullname"] == gdb_stack_frame["fullname"]
+
     gdb_stack_frame = currFrame
     if gdb_stack_index == 0 and not sameFrame:
         gdb_callstack_view.update_callstack()
-
-    syntax = file_view.settings().get("syntax")
-    gdb_variables_view.set_syntax(syntax)
-    gdb_callstack_view.set_syntax(syntax)
 
     update_view_markers()
     gdb_variables_view.update_variables(sameFrame)
