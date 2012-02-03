@@ -917,6 +917,7 @@ def gdboutput(pipe):
         gdb_stack_frame = None
     global gdb_cursor_position
     gdb_cursor_position = 0
+    gdb_run_status = None
     sublime.set_timeout(update_view_markers, 0)
 
 
