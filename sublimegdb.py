@@ -586,11 +586,6 @@ class GDBCallstackView(GDBView):
         if self.is_open() and gdb_run_status == "stopped":
             self.update_callstack()
 
-    def do_clear(self, data):
-        super(GDBCallstackView, self).do_clear(data)
-        if self.is_open():
-            self.get_view().erase_regions("sublimegdb.stackframe")
-
     def update_callstack(self):
         if not self.should_update():
             return
@@ -613,13 +608,17 @@ class GDBCallstackView(GDBView):
 
     def update_marker(self, pos_scope, pos_icon):
         if self.is_open():
-            line = 0
-            for i in range(gdb_stack_index):
-                line += self.frames[i].lines
             view = self.get_view()
-            view.add_regions("sublimegdb.stackframe",
-                                [view.line(view.text_point(line, 0))],
-                                pos_scope, pos_icon, sublime.HIDDEN)
+            if gdb_stack_index != -1:
+                line = 0
+                for i in range(gdb_stack_index):
+                    line += self.frames[i].lines
+
+                view.add_regions("sublimegdb.stackframe",
+                                    [view.line(view.text_point(line, 0))],
+                                    pos_scope, pos_icon, sublime.HIDDEN)
+            else:
+                view.erase_regions("sublimegdb.stackframe")
 
     def select(self, row):
         line = 0
@@ -891,6 +890,7 @@ def gdboutput(pipe):
     global gdb_lastline
     global gdb_stack_frame
     global gdb_run_status
+    global gdb_stack_index
     command_result_regex = re.compile("^\d+\^")
     run_status_regex = re.compile("(^\d*\*)([^,]+)")
     while True:
@@ -927,6 +927,7 @@ def gdboutput(pipe):
         sublime.set_timeout(session_ended_status_message, 0)
         gdb_stack_frame = None
     global gdb_cursor_position
+    gdb_stack_index = -1
     gdb_cursor_position = 0
     gdb_run_status = None
     sublime.set_timeout(update_view_markers, 0)
