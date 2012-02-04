@@ -910,6 +910,9 @@ def gdboutput(pipe):
                     if reason != None and reason.group(0).startswith("exited"):
                         run_cmd("-gdb-exit")
                     elif not "running" in gdb_run_status:
+                        thread_id = re.search('thread-id="(\d+)"', line)
+                        if thread_id != None:
+                            run_cmd("-thread-select %s" % thread_id.group(1))
                         sublime.set_timeout(update_cursor, 0)
                 if not line.startswith("(gdb)"):
                     gdb_lastline = line
