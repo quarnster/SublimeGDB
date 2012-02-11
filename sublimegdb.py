@@ -702,9 +702,9 @@ gdb_views = [gdb_session_view, gdb_console_view, gdb_variables_view, gdb_callsta
 def extract_breakpoints(line):
     res = parse_result_line(line)
     if "bkpt" in res["BreakpointTable"]:
-        return res["BreakpointTable"]["bkpt"]
+        return listify(res["BreakpointTable"]["bkpt"])
     else:
-        return res["BreakpointTable"]["body"]["bkpt"]
+        return listify(res["BreakpointTable"]["body"]["bkpt"])
 
 
 def update_view_markers(view=None):
@@ -785,10 +785,26 @@ def resume():
     run_cmd("-exec-continue", True)
 
 
+def insert_breakpoint(filename, line):
+    cmd = "-break-insert %s:%d" % (filename, line)
+    out = run_cmd(cmd, True)
+    if get_result(out) == "error":
+        return None, 0
+    res = parse_result_line(out)
+    if "bkpt" not in res and "matches" in res:
+        cmd = "-break-insert *%s" % res["matches"]["b"][0]["addr"]
+        out = run_cmd(cmd, True)
+        if get_result(out) == "error":
+            return None, 0
+        res = parse_result_line(out)
+    bp = res["bkpt"]
+    f = bp["fullname"] if "fullname" in bp else bp["file"]
+    return f, int(bp["line"])
+
 def add_breakpoint(filename, line):
     if is_running():
         res = wait_until_stopped()
-        line = int(parse_result_line(run_cmd("-break-insert %s:%d" % (filename, line), True))["bkpt"]["line"])
+        f, line = insert_breakpoint(filename, line)
         if res:
             resume()
     breakpoints[filename].append(line)
@@ -823,15 +839,12 @@ def sync_breakpoints():
             if file in newbps:
                 if bp in newbps[file]:
                     continue
-            cmd = "-break-insert %s:%d" % (file, bp)
-            out = run_cmd(cmd, True)
-            if get_result(out) == "error":
+            f, line = insert_breakpoint(file, bp)
+            if f == None:
                 continue
-            bp = parse_result_line(out)["bkpt"]
-            f = bp["fullname"] if "fullname" in bp else bp["file"]
             if not f in newbps:
                 newbps[f] = []
-            newbps[f].append(int(bp["line"]))
+            newbps[f].append(line)
     breakpoints = newbps
     update_view_markers()
 
