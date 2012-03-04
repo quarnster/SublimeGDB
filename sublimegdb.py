@@ -392,6 +392,7 @@ class GDBRegisterView(GDBView):
             names = self.get_names()
             vals = self.get_values()
             self.values = []
+
             for i in range(len(vals)):
                 idx = int(vals[i]["number"])
                 self.values.append(GDBRegister(names[idx], idx, vals[i]["value"]))
@@ -400,8 +401,8 @@ class GDBRegisterView(GDBView):
             regvals = parse_result_line(run_cmd("-data-list-register-values x %s" % " ".join(regs), True))["register-values"]
             for i in range(len(regs)):
                 reg = int(regvals[i]["number"])
-                self.values[reg].set_value(regvals[i]["value"])
-
+                if reg < len(self.values):
+                    self.values[reg].set_value(regvals[i]["value"])
         self.clear()
         line = 0
         for item in self.values:
@@ -412,6 +413,8 @@ class GDBRegisterView(GDBView):
         v = self.get_view()
         for dirty in dirtylist:
             i = int(dirty)
+            if i >= len(self.values):
+                continue
             region = v.full_line(v.text_point(self.values[i].line, 0))
             if self.values[i].lines > 1:
                 region = region.cover(v.full_line(v.text_point(self.values[i].line + self.values[i].lines - 1, 0)))
@@ -865,7 +868,12 @@ def update_cursor():
     global gdb_stack_index
     global gdb_stack_frame
 
-    currFrame = parse_result_line(run_cmd("-stack-info-frame", True))["frame"]
+    res = run_cmd("-stack-info-frame", True)
+    if get_result(res) == "error":
+        if gdb_run_status != "running":
+            print "run_status is %s, but got error: %s" % (gdb_run_status, res)
+        return
+    currFrame = parse_result_line(res)["frame"]
     gdb_stack_index = int(currFrame["level"])
 
     if "fullname" in currFrame:
