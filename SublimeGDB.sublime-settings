@@ -5,7 +5,7 @@
     //
     // "settings":
     // {
-    //      "sublimegdb_workingdir": "/tath/to/your/project",
+    //      "sublimegdb_workingdir": "/path/to/your/project",
     //      "sublimegdb_commandline":
     //      [
     //          "gdb",
