@@ -652,6 +652,15 @@ class GDBDisassemblyView(GDBView):
         self.start = -1
         self.end = -1
 
+    def add_insns(self, src_asm):
+        for asm in src_asm:
+            line = "%s: %s" % (asm["address"], asm["inst"])
+            self.add_line("%-80s # %s+%s\n" % (line, asm["func-name"], asm["offset"]))
+            addr = int(asm["address"], 16)
+            if self.start == -1 or addr < self.start:
+                self.start = addr
+            self.end = addr
+
     def update_disassembly(self):
         if not self.should_update():
             return
@@ -666,20 +675,13 @@ class GDBDisassemblyView(GDBView):
             asms = asms["asm_insns"]
             if "src_and_asm_line" in asms:
                 l = listify(asms["src_and_asm_line"])
+                for src_asm in l:
+                    line = src_asm["line"]
+                    file = src_asm["file"]
+                    self.add_line("%s:%s\n" % (file, line))
+                    self.add_insns(src_asm["line_asm_insn"])
             else:
-                l = []
-            self.start = -1
-            for src_asm in l:
-                line = src_asm["line"]
-                file = src_asm["file"]
-                self.add_line("%s:%s\n" % (file, line))
-                for asm in src_asm["line_asm_insn"]:
-                    line = "%s: %s" % (asm["address"], asm["inst"])
-                    self.add_line("%-80s # %s+%s\n" % (line, asm["func-name"], asm["offset"]))
-                    addr = int(asm["address"], 16)
-                    if self.start == -1 or addr < self.start:
-                        self.start = addr
-                    self.end = addr
+                self.add_insns(asms)
             self.update()
         view = self.get_view()
         reg = view.find("^0x[0]*%x:" % pc, 0)
