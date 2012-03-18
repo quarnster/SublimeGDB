@@ -58,7 +58,7 @@ gdb_stack_frame = None
 gdb_stack_index = 0
 
 gdb_run_status = None
-result_regex = re.compile("(?<=\^)[^,]*")
+result_regex = re.compile("(?<=\^)[^,\"]*")
 
 
 def log_debug(line):
@@ -96,10 +96,13 @@ class GDBView(object):
         if self.is_open():
             self.get_view().set_syntax_file(syntax)
 
-    def add_line(self, line):
+    def add_line(self, line, now=False):
         if self.is_open():
-            self.queue.put((self.do_add_line, line))
-            sublime.set_timeout(self.update, 0)
+            if not now:
+                self.queue.put((self.do_add_line, line))
+                sublime.set_timeout(self.update, 0)
+            else:
+                self.do_add_line(line)
 
     def scroll(self, line):
         if self.is_open():
@@ -111,10 +114,13 @@ class GDBView(object):
             self.queue.put((self.do_set_viewport_position, pos))
             sublime.set_timeout(self.update, 0)
 
-    def clear(self):
+    def clear(self, now=False):
         if self.is_open():
-            self.queue.put((self.do_clear, None))
-            sublime.set_timeout(self.update, 0)
+            if not now:
+                self.queue.put((self.do_clear, None))
+                sublime.set_timeout(self.update, 0)
+            else:
+                self.do_clear(None)
 
     def create_view(self):
         self.view = sublime.active_window().new_file()
@@ -634,6 +640,100 @@ class GDBCallstackView(GDBView):
             line += fl
 
 
+class GDBThread:
+    def __init__(self, id, state="UNKNOWN", func="???()"):
+        self.id = id
+        self.state = state
+        self.func = func
+
+    def format(self):
+        return "%03d - %10s - %s\n" % (self.id, self.state, self.func)
+
+
+class GDBThreadsView(GDBView):
+    def __init__(self):
+        super(GDBThreadsView, self).__init__("GDB Threads", s=False, settingsprefix="threads")
+        self.threads = []
+        self.current_thread = 0
+
+    def open(self):
+        super(GDBThreadsView, self).open()
+        self.set_syntax("Packages/C++/C++.tmLanguage")
+        if self.is_open() and gdb_run_status == "stopped":
+            self.update_threads()
+
+    def update_threads(self):
+        if not self.should_update():
+            return
+        res = run_cmd("-thread-info", True)
+        ids = parse_result_line(run_cmd("-thread-list-ids", True))
+        if get_result(res) == "error":
+            if "thread-ids" in ids and "thread-id" in ids["thread-ids"]:
+                self.threads = [GDBThread(int(id)) for id in ids["thread-ids"]["thread-id"]]
+                if "threads" in ids and "thread" in ids["threads"]:
+                    for thread in ids["threads"]["thread"]:
+                        if "thread-id" in thread and "state" in thread:
+                            tid = int(thread["thread-id"])
+                            for t2 in self.threads:
+                                if t2.id == tid:
+                                    t2.state = thread["state"]
+                                    break
+                else:
+                    l = parse_result_line(run_cmd("-thread-info", True))
+            else:
+                self.threads = []
+        else:
+            l = parse_result_line(res)
+            self.threads = []
+            for thread in l["threads"]:
+                func = "???"
+                if "frame" in thread and "func" in thread["frame"]:
+                    func = thread["frame"]["func"]
+                    args = ""
+                    if "args" in thread["frame"]:
+                        for arg in thread["frame"]["args"]:
+                            if len(args) > 0:
+                                args += ", "
+                            if "name" in arg:
+                                args += arg["name"]
+                            if "value" in arg:
+                                args += " = " + arg["value"]
+                    func = "%s(%s);" % (func, args)
+                self.threads.append(GDBThread(int(thread["id"]), thread["state"], func))
+
+        if "current-thread-id" in ids:
+            self.current_thread = int(ids["current-thread-id"])
+        self.clear(True)
+        self.threads.sort(key=lambda t: t.id)
+        for thread in self.threads:
+            self.add_line(thread.format(), True)
+
+    def update_marker(self, pos_scope, pos_icon):
+        if self.is_open():
+            view = self.get_view()
+            line = -1
+            for i in range(len(self.threads)):
+                if self.threads[i].id == self.current_thread:
+                    line = i
+                    break
+
+            if line != -1:
+                view.add_regions("sublimegdb.currentthread",
+                                    [view.line(view.text_point(line, 0))],
+                                    pos_scope, pos_icon, sublime.HIDDEN)
+            else:
+                view.erase_regions("sublimegdb.currentthread")
+
+    def select_thread(self, thread):
+        run_cmd("-thread-select %d" % thread)
+        self.current_thread = thread
+
+    def select(self, row):
+        if row >= len(self.threads):
+            return
+        self.select_thread(self.threads[row].id)
+
+
 class GDBDisassemblyView(GDBView):
     def __init__(self):
         super(GDBDisassemblyView, self).__init__("GDB Disassembly", s=False, settingsprefix="disassembly")
@@ -701,7 +801,8 @@ gdb_variables_view = GDBVariablesView()
 gdb_callstack_view = GDBCallstackView()
 gdb_register_view = GDBRegisterView()
 gdb_disassembly_view = GDBDisassemblyView()
-gdb_views = [gdb_session_view, gdb_console_view, gdb_variables_view, gdb_callstack_view, gdb_register_view, gdb_disassembly_view]
+gdb_threads_view = GDBThreadsView()
+gdb_views = [gdb_session_view, gdb_console_view, gdb_variables_view, gdb_callstack_view, gdb_register_view, gdb_disassembly_view, gdb_threads_view]
 
 
 def extract_breakpoints(line):
@@ -739,6 +840,7 @@ def update_view_markers(view=None):
     view.add_regions("sublimegdb.position", cursor, pos_scope, pos_icon, sublime.HIDDEN)
 
     gdb_callstack_view.update_marker(pos_scope, pos_icon)
+    gdb_threads_view.update_marker(pos_scope, pos_icon)
 
 count = 0
 
@@ -896,6 +998,7 @@ def update_cursor():
     gdb_stack_frame = currFrame
     if gdb_stack_index == 0 and not sameFrame:
         gdb_callstack_view.update_callstack()
+    gdb_threads_view.update_threads()
 
     update_view_markers()
     gdb_variables_view.update_variables(sameFrame)
@@ -935,7 +1038,7 @@ def gdboutput(pipe):
                     elif not "running" in gdb_run_status:
                         thread_id = re.search('thread-id="(\d+)"', line)
                         if thread_id != None:
-                            run_cmd("-thread-select %s" % thread_id.group(1))
+                            gdb_threads_view.select_thread(int(thread_id.group(1)))
                         sublime.set_timeout(update_cursor, 0)
                 if not line.startswith("(gdb)"):
                     gdb_lastline = line
@@ -961,6 +1064,7 @@ def gdboutput(pipe):
     gdb_register_view.clear()
     gdb_disassembly_view.clear()
     gdb_variables_view.clear()
+    gdb_threads_view.clear()
 
 
 def show_input():
@@ -1148,6 +1252,10 @@ class GdbClick(sublime_plugin.TextCommand):
             gdb_variables_view.expand_collapse_variable(self.view, toggle=True)
         elif gdb_callstack_view.is_open() and self.view.id() == gdb_callstack_view.get_view().id():
             gdb_callstack_view.select(row)
+        elif gdb_threads_view.is_open() and self.view.id() == gdb_threads_view.get_view().id():
+            gdb_threads_view.select(row)
+            update_cursor()
+
 
     def is_enabled(self):
         return is_running()
@@ -1319,3 +1427,13 @@ class GdbOpenDisassemblyView(sublime_plugin.WindowCommand):
 
     def is_visible(self):
         return not gdb_disassembly_view.is_open()
+
+class GdbOpenThreadsView(sublime_plugin.WindowCommand):
+    def run(self):
+        gdb_threads_view.open()
+
+    def is_enabled(self):
+        return not gdb_threads_view.is_open()
+
+    def is_visible(self):
+        return not gdb_threads_view.is_open()

@@ -35,5 +35,9 @@
     {
         "caption": "Open Variables View",
         "command": "gdb_open_variables_view"
+    },
+    {
+        "caption": "Open Threads View",
+        "command": "gdb_open_threads_view"
     }
 ]
