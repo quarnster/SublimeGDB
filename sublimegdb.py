@@ -1074,24 +1074,29 @@ def programoutput():
     pipe = None
     while True:
         try:
-            if gdb_process.poll() != None:
-                break
+            proc = gdb_process.poll() != None
             if pipe == None:
                 try:
                     pipe = open("/tmp/sublimegdb_output.txt", "r")
                 except:
                     pass
                 if pipe == None:
+                    if proc:
+                        break
                     time.sleep(1.0)
                     continue
 
-            line = pipe.readline().strip()
+            line = pipe.readline()
             if len(line) > 0:
-                gdb_console_view.add_line("%s\n" % line)
+                gdb_console_view.add_line(line)
             else:
-                time.sleep(0.25)
+                if proc:
+                    break
+                time.sleep(0.1)
         except:
             traceback.print_exc()
+    if not pipe == None:
+        pipe.close()
 
 
 def show_input():
