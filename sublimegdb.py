@@ -904,6 +904,8 @@ def insert_breakpoint(filename, line):
         if get_result(out) == "error":
             return None, 0
         res = parse_result_line(out)
+    if "bkpt" not in res:
+        return None, 0
     bp = res["bkpt"]
     f = bp["fullname"] if "fullname" in bp else bp["file"]
     return f, int(bp["line"])
@@ -1067,6 +1069,31 @@ def gdboutput(pipe):
     gdb_threads_view.clear()
 
 
+def programoutput():
+    global gdb_process
+    pipe = None
+    while True:
+        try:
+            if gdb_process.poll() != None:
+                break
+            if pipe == None:
+                try:
+                    pipe = open("/tmp/sublimegdb_output.txt", "r")
+                except:
+                    pass
+                if pipe == None:
+                    time.sleep(1.0)
+                    continue
+
+            line = pipe.readline().strip()
+            if len(line) > 0:
+                gdb_console_view.add_line("%s\n" % line)
+            else:
+                time.sleep(0.25)
+        except:
+            traceback.print_exc()
+
+
 def show_input():
     sublime.active_window().show_input_panel("GDB", "", input_on_done, input_on_change, input_on_cancel)
 
@@ -1121,6 +1148,10 @@ class GdbLaunch(sublime_plugin.WindowCommand):
 
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
+            f = open("/tmp/sublimegdb_output.txt", "w")
+            f.close()
+            t = threading.Thread(target=programoutput)
+            t.start()
             try:
                 run_cmd("-gdb-show interpreter", True)
             except:
@@ -1129,6 +1160,7 @@ It seems you're not running gdb with the "mi" interpreter. Please add
 "--interpreter=mi" to your gdb command line""")
                 gdb_process.stdin.write("quit\n")
                 return
+            run_cmd("-inferior-tty-set /tmp/sublimegdb_output.txt")
 
             run_cmd("-gdb-set target-async 1")
             run_cmd("-gdb-set pagination off")
