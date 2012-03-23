@@ -578,7 +578,11 @@ class GDBCallstackFrame:
     def format(self):
         output = "%s(" % self.func
         for arg in self.args:
-            output += "%s = %s, " % (arg["name"], arg["value"])
+            if "name" in arg:
+                output += arg["name"]
+            if "value" in arg:
+                output += " = %s" % arg["value"]
+            output += ","
         output += ");\n"
         self.lines = output.count("\n")
         return output
@@ -610,7 +614,10 @@ class GDBCallstackView(GDBView):
 
         self.frames = []
         for i in range(len(frames)):
-            f = GDBCallstackFrame(frames[i]["func"], args[i]["args"])
+            arg = {}
+            if len(args) > i:
+                arg = args[i]["args"]
+            f = GDBCallstackFrame(frames[i]["func"], arg)
             self.frames.append(f)
             self.add_line(f.format())
         self.update()
