@@ -5,6 +5,7 @@
     //
     // "settings":
     // {
+    //      "sublimegdb_sourcedir": "/path/to/your/project/source",
     //      "sublimegdb_workingdir": "/path/to/your/project",
     //      "sublimegdb_commandline":
     //      [
