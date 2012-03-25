@@ -1005,8 +1005,9 @@ def update_cursor():
         sameFrame = currFrame["fullname"] == gdb_stack_frame["fullname"]
 
     gdb_stack_frame = currFrame
-    if gdb_stack_index == 0 and not sameFrame:
-        gdb_callstack_view.update_callstack()
+    # Always need to update the callstack since it's possible to
+    # end up in the current function from many different call stacks
+    gdb_callstack_view.update_callstack()
     gdb_threads_view.update_threads()
 
     update_view_markers()
