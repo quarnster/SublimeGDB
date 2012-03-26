@@ -96,6 +96,12 @@ class GDBView(object):
                 sublime.active_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0))
             self.create_view()
 
+    def close(self):
+        if self.view != None:
+            if self.settingsprefix != None:
+                sublime.active_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0))
+            self.destroy_view()
+
     def should_update(self):
         return self.is_open() and is_running() and gdb_run_status == "stopped"
 
@@ -138,6 +144,10 @@ class GDBView(object):
         # does not eat the "enter" keybinding
         self.view.settings().set('command_mode', False)
         self.closed = False
+
+    def destroy_view(self):
+        sublime.active_window().focus_view(self.view)
+        sublime.active_window().run_command("close")
 
     def is_closed(self):
         return self.closed
@@ -1227,6 +1237,8 @@ class GdbExit(sublime_plugin.WindowCommand):
     def run(self):
         #wait_until_stopped()
         run_cmd("-gdb-exit", True)
+        for view in gdb_views:
+            view.close()
         sublime.active_window().set_layout(gdb_bkp_view)
 
     def is_enabled(self):
