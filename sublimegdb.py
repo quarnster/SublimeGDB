@@ -52,6 +52,7 @@ gdb_lastline = ""
 gdb_cursor = ""
 gdb_cursor_position = 0
 gdb_last_cursor_view = None
+gdb_bkp_view = {}
 
 gdb_process = None
 gdb_stack_frame = None
@@ -1154,6 +1155,9 @@ class GdbLaunch(sublime_plugin.WindowCommand):
             gdb_process = subprocess.Popen(commandline, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
             w = sublime.active_window()
+            #back up current layout before opening the debug one
+            #it will be restored when debog is finished
+            gdb_bkp_view = w.get_layout()
             w.set_layout(
                 get_setting("layout",
                     {
@@ -1221,8 +1225,9 @@ class GdbContinue(sublime_plugin.WindowCommand):
 
 class GdbExit(sublime_plugin.WindowCommand):
     def run(self):
-        wait_until_stopped()
+        #wait_until_stopped()
         run_cmd("-gdb-exit", True)
+        sublime.active_window().set_layout(gdb_bkp_view)
 
     def is_enabled(self):
         return is_running()
