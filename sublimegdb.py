@@ -1256,7 +1256,7 @@ class GdbExit(sublime_plugin.WindowCommand):
 
 class GdbPause(sublime_plugin.WindowCommand):
     def run(self):
-        run_cmd("-gdb-interrupt")
+        run_cmd("-exec-interrupt")
 
     def is_enabled(self):
         return is_running() and gdb_run_status != "stopped"
