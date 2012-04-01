@@ -192,7 +192,6 @@ class GDBView(object):
     def update(self):
         if not self.is_open():
             return
-        insert = ""
         try:
             while not self.queue.empty():
                 cmd, data = self.queue.get()
@@ -921,7 +920,7 @@ def resume():
 def insert_breakpoint(filename, line):
     # Attempt to simplify file paths for windows. As some versions of gdb choke on drive specifiers
     if os.name == 'nt':
-        filename=os.path.relpath(filename,get_setting('sourcedir'))
+        filename=os.path.relpath(filename, get_setting('sourcedir'))
 
     cmd = "-break-insert \"'%s':%d\"" % (filename, line)
     out = run_cmd(cmd, True)
@@ -939,6 +938,7 @@ def insert_breakpoint(filename, line):
     bp = res["bkpt"]
     f = bp["fullname"] if "fullname" in bp else bp["file"]
     return f, int(bp["line"])
+
 
 def add_breakpoint(filename, line):
     if is_running():
@@ -1098,6 +1098,16 @@ def gdboutput(pipe):
     gdb_disassembly_view.clear()
     gdb_variables_view.clear()
     gdb_threads_view.clear()
+    sublime.set_timeout(cleanup, 0)
+
+
+def cleanup():
+    if get_setting("close_views", True):
+        for view in gdb_views:
+            view.close()
+    if get_setting("push_pop_layout", True):
+        gdb_bkp_window.set_layout(gdb_bkp_layout)
+        gdb_bkp_window.focus_view(gdb_bkp_view)
 
 
 def programoutput():
@@ -1161,6 +1171,9 @@ class GdbLaunch(sublime_plugin.WindowCommand):
     def run(self):
         global gdb_process
         global gdb_run_status
+        global gdb_bkp_window
+        global gdb_bkp_view
+        global gdb_bkp_layout
         if gdb_process == None or gdb_process.poll() != None:
             os.chdir(get_setting("workingdir", "/tmp"))
             commandline = get_setting("commandline")
@@ -1238,14 +1251,8 @@ class GdbContinue(sublime_plugin.WindowCommand):
 
 class GdbExit(sublime_plugin.WindowCommand):
     def run(self):
-        #wait_until_stopped()
+        wait_until_stopped()
         run_cmd("-gdb-exit", True)
-        for view in gdb_views:
-            view.close()
-        sublime.active_window().set_layout(gdb_bkp_layout)
-        # sublime.active_window().focus_view(gdb_bkp_view)
-        sublime.active_window().focus_view(sublime.active_window().views()[0])
-        
 
     def is_enabled(self):
         return is_running()
@@ -1334,7 +1341,6 @@ class GdbClick(sublime_plugin.TextCommand):
         elif gdb_threads_view.is_open() and self.view.id() == gdb_threads_view.get_view().id():
             gdb_threads_view.select(row)
             update_cursor()
-
 
     def is_enabled(self):
         return is_running()
@@ -1506,6 +1512,7 @@ class GdbOpenDisassemblyView(sublime_plugin.WindowCommand):
 
     def is_visible(self):
         return not gdb_disassembly_view.is_open()
+
 
 class GdbOpenThreadsView(sublime_plugin.WindowCommand):
     def run(self):

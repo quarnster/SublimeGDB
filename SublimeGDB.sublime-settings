@@ -63,5 +63,13 @@
     "disassembly_open": false,
 
     "threads_group": 3,
-    "threads_open": true
+    "threads_open": true,
+
+    // If set to true will push the layout before debugging
+    // and pop it when debugging ends
+    "push_pop_layout": true,
+
+    // If set to true will close the gdb views when the
+    // debugging session ends
+    "close_views": true
 }
