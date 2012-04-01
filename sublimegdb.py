@@ -188,7 +188,13 @@ class GDBView(object):
         self.view.run_command("goto_line", {"line": data + 1})
 
     def do_set_viewport_position(self, data):
-        self.view.set_viewport_position(data, True)
+        # Shouldn't have to call viewport_extent, but it
+        # seems to flush whatever value is stale so that
+        # the following set_viewport_position works.
+        # Keeping it around as a WAR until it's fixed
+        # in Sublime Text 2.
+        self.view.viewport_extent()
+        self.view.set_viewport_position(data, False)
 
     def update(self):
         if not self.is_open():
@@ -582,8 +588,6 @@ class GDBVariablesView(GDBView):
                     var.collapse()
                 pos = view.viewport_position()
                 self.update_view()
-                self.update()
-                self.scroll(row)
                 self.set_viewport_position(pos)
                 self.update()
 
