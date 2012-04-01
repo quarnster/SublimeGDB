@@ -56,6 +56,7 @@ gdb_bkp_layout = {}
 gdb_bkp_window = None
 gdb_bkp_view = None
 
+gdb_shutting_down = False
 gdb_process = None
 gdb_stack_frame = None
 gdb_stack_index = 0
@@ -920,9 +921,10 @@ def resume():
 def insert_breakpoint(filename, line):
     # Attempt to simplify file paths for windows. As some versions of gdb choke on drive specifiers
     if os.name == 'nt':
-        filename=os.path.relpath(filename, get_setting('sourcedir'))
+        filename = os.path.relpath(filename, get_setting('sourcedir'))
+        filename = "'%s'" % filename
 
-    cmd = "-break-insert \"'%s':%d\"" % (filename, line)
+    cmd = "-break-insert \"%s:%d\"" % (filename, line)
     out = run_cmd(cmd, True)
     if get_result(out) == "error":
         return None, 0
@@ -1068,7 +1070,7 @@ def gdboutput(pipe):
                     reason = re.search("(?<=reason=\")[a-zA-Z0-9\-]+(?=\")", line)
                     if reason != None and reason.group(0).startswith("exited"):
                         run_cmd("-gdb-exit")
-                    elif not "running" in gdb_run_status:
+                    elif not "running" in gdb_run_status and not gdb_shutting_down:
                         thread_id = re.search('thread-id="(\d+)"', line)
                         if thread_id != None:
                             gdb_threads_view.select_thread(int(thread_id.group(1)))
@@ -1174,6 +1176,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         global gdb_bkp_window
         global gdb_bkp_view
         global gdb_bkp_layout
+        global gdb_shutting_down
         if gdb_process == None or gdb_process.poll() != None:
             os.chdir(get_setting("workingdir", "/tmp"))
             commandline = get_setting("commandline")
@@ -1198,6 +1201,8 @@ class GdbLaunch(sublime_plugin.WindowCommand):
                 if view.is_closed() and view.open_at_start():
                     view.open()
                 view.clear()
+
+            gdb_shutting_down = False
 
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
@@ -1251,6 +1256,8 @@ class GdbContinue(sublime_plugin.WindowCommand):
 
 class GdbExit(sublime_plugin.WindowCommand):
     def run(self):
+        global gdb_shutting_down
+        gdb_shutting_down = True
         wait_until_stopped()
         run_cmd("-gdb-exit", True)
 
