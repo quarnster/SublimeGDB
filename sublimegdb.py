@@ -1182,9 +1182,12 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         global gdb_bkp_layout
         global gdb_shutting_down
         if gdb_process == None or gdb_process.poll() != None:
-            os.chdir(get_setting("workingdir", "/tmp"))
             commandline = get_setting("commandline")
-            gdb_process = subprocess.Popen(commandline, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            if isinstance(commandline, list):
+                # backwards compatibility for when the commandline was a list
+                commandline = " ".join(commandline)
+            gdb_process = subprocess.Popen(commandline, shell=True, cwd=get_setting("workingdir", "/tmp"),
+                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
             gdb_bkp_window = sublime.active_window()
             #back up current layout before opening the debug one

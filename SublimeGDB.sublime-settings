@@ -17,12 +17,12 @@
     //
     "workingdir": "/tmp",
 
-    "commandline":
-    [
-        "gdb",
-        "--interpreter=mi", // NOTE: This MUST be here for the plugin to work
-        "./executable"
-    ],
+    // NOTE: You MUST provide --interpreter=mi for the plugin to work
+    "commandline": "gdb --interpreter=mi ./executable",
+
+    // The command to use to run the program.
+    // If you are attaching to a remote program, you
+    // probably want to change this to -exec-continue
     "exec_cmd": "-exec-run",
 
     "layout":
