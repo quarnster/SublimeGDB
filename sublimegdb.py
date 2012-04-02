@@ -151,6 +151,7 @@ class GDBView(object):
     def destroy_view(self):
         sublime.active_window().focus_view(self.view)
         sublime.active_window().run_command("close")
+        self.view = None
 
     def is_closed(self):
         return self.closed
@@ -1426,8 +1427,6 @@ class GdbEditRegister(sublime_plugin.TextCommand):
     def is_enabled(self):
         if not is_running():
             return False
-        print gdb_register_view.is_open()
-        print self.view.id() == gdb_register_view.get_view().id()
         if gdb_register_view.is_open() and self.view.id() == gdb_register_view.get_view().id():
             return True
         return False
@@ -1444,6 +1443,8 @@ class GdbEventListener(sublime_plugin.EventListener):
             if key.endswith("open"):
                 return v.is_open() == operand
             else:
+                if v.get_view() == None:
+                    return False == operand
                 return (view.id() == v.get_view().id()) == operand
         return None
 
