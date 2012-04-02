@@ -33,6 +33,10 @@ In short:
 * Double click a variable in the GDB Variables view to modify its value
 * You can also access some commands by right clicking in any view
 
+=== Show your support ===
+
+[[https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=UPSEP2BHMLYEW|Donate]]
+
 === License ===
 This plugin is using the zlib license
 
@@ -58,3 +62,4 @@ freely, subject to the following restrictions:
    3. This notice may not be removed or altered from any source
    distribution.
 }}}
+
