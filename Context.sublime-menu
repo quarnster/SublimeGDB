@@ -13,31 +13,35 @@
     { "command": "gdb_exit", "caption": "Stop Debugging"},
     { "caption": "-", "id": "gdb_views" },
     {
-        "caption": "Open Register View",
-        "command": "gdb_open_register_view"
-    },
-    {
-        "caption": "Open Disassembly View",
-        "command": "gdb_open_disassembly_view"
-    },
-    {
-        "caption": "Open Session View",
-        "command": "gdb_open_session_view"
-    },
-    {
-        "caption": "Open Console View",
-        "command": "gdb_open_console_view"
+        "caption": "Open Breakpoint View",
+        "command": "gdb_open_breakpoint_view"
     },
     {
         "caption": "Open Callstack View",
         "command": "gdb_open_callstack_view"
     },
     {
-        "caption": "Open Variables View",
-        "command": "gdb_open_variables_view"
+        "caption": "Open Console View",
+        "command": "gdb_open_console_view"
+    },
+    {
+        "caption": "Open Disassembly View",
+        "command": "gdb_open_disassembly_view"
+    },
+    {
+        "caption": "Open Register View",
+        "command": "gdb_open_register_view"
+    },
+    {
+        "caption": "Open Session View",
+        "command": "gdb_open_session_view"
     },
     {
         "caption": "Open Threads View",
         "command": "gdb_open_threads_view"
+    },
+    {
+        "caption": "Open Variables View",
+        "command": "gdb_open_variables_view"
     }
 ]

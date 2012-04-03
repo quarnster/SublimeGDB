@@ -62,6 +62,9 @@
     "threads_group": 3,
     "threads_open": true,
 
+    "breakpoints_group": 3,
+    "breakpoints_open": true,
+
     // If set to true will push the layout before debugging
     // and pop it when debugging ends
     "push_pop_layout": true,

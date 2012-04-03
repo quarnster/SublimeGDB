@@ -74,6 +74,10 @@
         "command": "gdb_open_disassembly_view"
     },
     {
+        "caption": "SublimeGDB: Open Breakpoint View",
+        "command": "gdb_open_breakpoint_view"
+    }
+    {
         "caption": "SublimeGDB: Open Threads View",
         "command": "gdb_open_threads_view"
     }
