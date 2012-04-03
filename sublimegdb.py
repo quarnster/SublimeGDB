@@ -69,6 +69,7 @@ if os.name == 'nt':
 
 gdb_run_status = None
 result_regex = re.compile("(?<=\^)[^,\"]*")
+collapse_regex = re.compile("{.*}", re.DOTALL)
 
 
 def log_debug(line):
@@ -435,11 +436,13 @@ class GDBRegisterView(GDBView):
                 reg = int(regvals[i]["number"])
                 if reg < len(self.values):
                     self.values[reg].set_value(regvals[i]["value"])
+        pos = self.get_view().viewport_position()
         self.clear()
         line = 0
         for item in self.values:
             output, line = item.format(line)
             self.add_line(output)
+        self.set_viewport_position(pos)
         self.update()
         regions = []
         v = self.get_view()
@@ -605,7 +608,9 @@ class GDBCallstackFrame:
             if "name" in arg:
                 output += arg["name"]
             if "value" in arg:
-                output += " = %s" % arg["value"]
+                val = arg["value"]
+                val = collapse_regex.sub("{...}", val)
+                output += " = %s" % val
             output += ","
         output += ");\n"
         self.lines = output.count("\n")
@@ -634,6 +639,7 @@ class GDBCallstackView(GDBView):
             return
         frames = listify(parse_result_line(line)["stack"]["frame"])
         args = listify(parse_result_line(run_cmd("-stack-list-arguments 1", True))["stack-args"]["frame"])
+        pos = self.get_view().viewport_position()
         self.clear()
 
         self.frames = []
@@ -644,6 +650,7 @@ class GDBCallstackView(GDBView):
             f = GDBCallstackFrame(frames[i]["func"], arg)
             self.frames.append(f)
             self.add_line(f.format())
+        self.set_viewport_position(pos)
         self.update()
 
     def update_marker(self, pos_scope, pos_icon):
@@ -734,10 +741,13 @@ class GDBThreadsView(GDBView):
 
         if "current-thread-id" in ids:
             self.current_thread = int(ids["current-thread-id"])
-        self.clear(True)
+        pos = self.get_view().viewport_position()
+        self.clear()
         self.threads.sort(key=lambda t: t.id)
         for thread in self.threads:
-            self.add_line(thread.format(), True)
+            self.add_line(thread.format())
+        self.set_viewport_position(pos)
+        self.update()
 
     def update_marker(self, pos_scope, pos_icon):
         if self.is_open():
