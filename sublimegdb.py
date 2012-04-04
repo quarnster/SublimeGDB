@@ -24,6 +24,7 @@ import sublime
 import sublime_plugin
 import subprocess
 import struct
+import tempfile
 import threading
 import time
 import traceback
@@ -69,6 +70,10 @@ if os.name == 'nt':
 gdb_run_status = None
 result_regex = re.compile("(?<=\^)[^,\"]*")
 collapse_regex = re.compile("{.*}", re.DOTALL)
+
+
+def normalize(filename):
+    return os.path.abspath(os.path.normcase(filename))
 
 
 def log_debug(line):
@@ -840,11 +845,7 @@ class GDBDisassemblyView(GDBView):
 
 class GDBBreakpoint:
     def __init__(self, filename, line):
-        # Attempt to simplify file paths for windows. As some versions of gdb choke on drive specifiers
-        if os.name == 'nt':
-            filename = os.path.relpath(filename, get_setting('sourcedir'))
-            filename = "'%s'" % filename
-        self.original_filename = filename
+        self.original_filename = normalize(filename)
         self.original_line = line
         self.clear()
         self.add()
@@ -858,8 +859,8 @@ class GDBBreakpoint:
     @property
     def filename(self):
         if self.number != -1:
-            return self.resolved_filename
-        return self.original_filename
+            return normalize(self.resolved_filename)
+        return normalize(self.original_filename)
 
     def clear(self):
         self.resolved_filename = ""
@@ -867,7 +868,7 @@ class GDBBreakpoint:
         self.number = -1
 
     def insert(self):
-        cmd = "-break-insert \"%s:%d\"" % (self.original_filename, self.original_line)
+        cmd = "-break-insert \"%s:%d\"" % (self.original_filename.encode("unicode-escape"), self.original_line)
         out = run_cmd(cmd, True)
         if get_result(out) == "error":
             return
@@ -923,6 +924,9 @@ class GDBBreakpointView(GDBView):
     def update_marker(self, view):
         bps = []
         fn = view.file_name()
+        if fn == None:
+            return
+        fn = normalize(fn)
         for bkpt in self.breakpoints:
             if bkpt.filename == fn and not (bkpt.line == gdb_cursor_position and fn == gdb_cursor):
                 bps.append(view.full_line(view.text_point(bkpt.line - 1, 0)))
@@ -933,6 +937,7 @@ class GDBBreakpointView(GDBView):
                             sublime.HIDDEN)
 
     def find_breakpoint(self, filename, line):
+        filename = normalize(filename)
         for bkpt in self.breakpoints:
             if bkpt.filename == filename and bkpt.line == line:
                 return bkpt
@@ -982,6 +987,8 @@ def update_view_markers(view=None):
         view = sublime.active_window().active_view()
 
     fn = view.file_name()
+    if not fn is None:
+        fn = normalize(fn)
     pos_scope = get_setting("position_scope", "entity.name.class")
     pos_icon = get_setting("position_icon", "bookmark")
 
@@ -1168,23 +1175,12 @@ def cleanup():
         gdb_bkp_window.focus_view(gdb_bkp_view)
 
 
-def programoutput():
+def programoutput(pipe):
     global gdb_process
-    pipe = None
-    while True:
+    exception_count = 0
+    while exception_count < 100:
         try:
             proc = gdb_process.poll() != None
-            if pipe == None:
-                try:
-                    pipe = open("/tmp/sublimegdb_output.txt", "r")
-                except:
-                    pass
-                if pipe == None:
-                    if proc:
-                        break
-                    time.sleep(1.0)
-                    continue
-
             line = pipe.readline()
             if len(line) > 0:
                 gdb_console_view.add_line(line)
@@ -1194,6 +1190,7 @@ def programoutput():
                 time.sleep(0.1)
         except:
             traceback.print_exc()
+            exception_count = exception_count + 1
     if not pipe == None:
         pipe.close()
 
@@ -1265,9 +1262,8 @@ class GdbLaunch(sublime_plugin.WindowCommand):
 
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
-            f = open("/tmp/sublimegdb_output.txt", "w")
-            f.close()
-            t = threading.Thread(target=programoutput)
+            pipe, name = tempfile.mkstemp()
+            t = threading.Thread(target=programoutput, args=(os.fdopen(pipe),))
             t.start()
             try:
                 run_cmd("-gdb-show interpreter", True)
@@ -1277,7 +1273,7 @@ It seems you're not running gdb with the "mi" interpreter. Please add
 "--interpreter=mi" to your gdb command line""")
                 gdb_process.stdin.write("quit\n")
                 return
-            run_cmd("-inferior-tty-set /tmp/sublimegdb_output.txt")
+            run_cmd("-inferior-tty-set %s" % name)
 
             run_cmd("-gdb-set target-async 1")
             run_cmd("-gdb-set pagination off")
