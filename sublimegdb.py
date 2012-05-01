@@ -1284,7 +1284,7 @@ It seems you're not running gdb with the "mi" interpreter. Please add
 
             gdb_breakpoint_view.sync_breakpoints()
             gdb_run_status = "running"
-            run_cmd(get_setting("exec_cmd"), "-exec-run", True)
+            run_cmd(get_setting("exec_cmd"), True)
 
             show_input()
         else:
