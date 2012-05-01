@@ -882,8 +882,10 @@ class GDBBreakpoint:
         if "bkpt" not in res:
             return
         bp = res["bkpt"]
-        self.resolved_filename = bp["fullname"] if "fullname" in bp else bp["file"]
-        self.resolved_line = int(bp["line"])
+        if "fullname" in bp: self.resolved_filename = bp["fullname"]
+        elif "file" in bp: self.resolved_filename = bp["file"]
+        else: self.resolved_filename = bp["original-location"].split(":", 1)[0]
+        self.resolved_line = int(bp["line"] if "line" in bp else bp["original-location"].split(":", 1)[1])
         self.number = int(bp["number"])
 
     def add(self):
@@ -1282,7 +1284,7 @@ It seems you're not running gdb with the "mi" interpreter. Please add
 
             gdb_breakpoint_view.sync_breakpoints()
             gdb_run_status = "running"
-            run_cmd(get_setting("exec_cmd"), "-exec-run", True)
+            run_cmd(get_setting("exec_cmd"), True)
 
             show_input()
         else:
