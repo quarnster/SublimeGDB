@@ -216,7 +216,8 @@ class GDBView(object):
             traceback.print_exc()
 
     def on_session_ended(self):
-        self.clear()
+        if get_setting("%s_clear_on_end" % self.settingsprefix, True):
+            self.clear()
 
 
 class GDBVariable:
@@ -546,19 +547,23 @@ class GDBVariablesView(GDBView):
                         break
             for item in dellist:
                 self.variables.remove(item)
+            if len(self.variables) == 0:
+                # Is it really the same frame? Seems everything was removed, so might as well pull all data again
+                sameFrame = False
+            else:
+                loc = self.extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
+                tracked = []
+                for var in loc:
+                    create = True
+                    for var2 in self.variables:
+                        if var2['exp'] == var and var2 not in tracked:
+                            tracked.append(var2)
+                            create = False
+                            break
+                    if create:
+                        self.variables.append(self.create_variable(var))
 
-            loc = self.extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
-            tracked = []
-            for var in loc:
-                create = True
-                for var2 in self.variables:
-                    if var2['exp'] == var and var2 not in tracked:
-                        tracked.append(var2)
-                        create = False
-                        break
-                if create:
-                    self.variables.append(self.create_variable(var))
-        else:
+        if not sameFrame:
             for var in self.variables:
                 var.delete()
             args = self.extract_varnames(parse_result_line(run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True))["stack-args"]["frame"]["args"])
@@ -867,24 +872,32 @@ class GDBBreakpoint:
         self.resolved_line = 0
         self.number = -1
 
+    def breakpoint_added(self, res):
+        if "bkpt" not in res:
+            return
+        bp = res["bkpt"]
+        self.resolved_filename = bp["fullname"] if "fullname" in bp else bp["file"]
+        if not "/" in self.resolved_filename and not "\\" in self.resolved_filename:
+            self.resolved_filename = self.original_filename
+        self.resolved_line = int(bp["line"])
+        self.number = int(bp["number"])
+
     def insert(self):
-        cmd = "-break-insert \"%s:%d\"" % (self.original_filename.encode("unicode-escape"), self.original_line)
+        cmd = "-break-insert \"\\\"%s\\\":%d\"" % (self.original_filename.encode("unicode-escape"), self.original_line)
         out = run_cmd(cmd, True)
         if get_result(out) == "error":
             return
         res = parse_result_line(out)
         if "bkpt" not in res and "matches" in res:
-            cmd = "-break-insert *%s" % res["matches"]["b"][0]["addr"]
-            out = run_cmd(cmd, True)
-            if get_result(out) == "error":
-                return
-            res = parse_result_line(out)
-        if "bkpt" not in res:
-            return
-        bp = res["bkpt"]
-        self.resolved_filename = bp["fullname"] if "fullname" in bp else bp["file"]
-        self.resolved_line = int(bp["line"])
-        self.number = int(bp["number"])
+            for match in res["matches"]["b"]:
+                cmd = "-break-insert *%s" % match["addr"]
+                out = run_cmd(cmd, True)
+                if get_result(out) == "error":
+                    return
+                res = parse_result_line(out)
+                self.breakpoint_added(res)
+        else:
+            self.breakpoint_added(res)
 
     def add(self):
         if is_running():
@@ -971,7 +984,16 @@ class GDBBreakpointView(GDBView):
         self.update()
 
 
-gdb_session_view = GDBView("GDB Session", settingsprefix="session")
+class GDBSessionView(GDBView):
+    def __init__(self):
+        super(GDBSessionView, self).__init__("GDB Session", s=False, settingsprefix="session")
+
+    def open(self):
+        super(GDBSessionView, self).open()
+        self.set_syntax("Packages/SublimeGDB/gdb_session.tmLanguage")
+
+
+gdb_session_view = GDBSessionView()
 gdb_console_view = GDBView("GDB Console", settingsprefix="console")
 gdb_variables_view = GDBVariablesView()
 gdb_callstack_view = GDBCallstackView()
@@ -1162,7 +1184,7 @@ def gdboutput(pipe):
     sublime.set_timeout(update_view_markers, 0)
 
     for view in gdb_views:
-        view.on_session_ended()
+        sublime.set_timeout(view.on_session_ended, 0)
     sublime.set_timeout(cleanup, 0)
 
 
