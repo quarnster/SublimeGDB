@@ -223,7 +223,8 @@ class GDBView(object):
 
 
 class GDBVariable:
-    def __init__(self, vp=None):
+    def __init__(self, vp=None, parent=None):
+        self.parent = parent
         self.valuepair = vp
         self.children = []
         self.line = 0
@@ -252,10 +253,20 @@ class GDBVariable:
             elif key == "value":
                 self[key] = d[key]
 
+    def get_expression(self):
+        expression = ""
+        parent = self.parent
+        while parent != None:
+            ispointer = "typecode" in parent and parent["typecode"] == "PTR"
+            expression = "%s%s%s" % (parent["exp"], "->" if ispointer else ".", expression)
+            parent = parent.parent
+        expression += self["exp"]
+        return expression
+
     def add_children(self, name):
         children = listify(parse_result_line(run_cmd("-var-list-children 1 \"%s\"" % name, True))["children"]["child"])
         for child in children:
-            child = GDBVariable(child)
+            child = GDBVariable(child, parent=self)
             if child.get_name().endswith(".private") or \
                     child.get_name().endswith(".protected") or \
                     child.get_name().endswith(".public"):
@@ -979,8 +990,17 @@ class GDBBreakpointView(GDBView):
                 return bkpt
         return None
 
-    def add_watch(self, exp):
-        self.breakpoints.append(GDBWatch(exp))
+    def toggle_watch(self, exp):
+        add = True
+        for bkpt in self.breakpoints:
+            if isinstance(bkpt, GDBWatch) and bkpt.exp == exp:
+                add = False
+                bkpt.remove()
+                self.breakpoints.remove(bkpt)
+                break
+
+        if add:
+            self.breakpoints.append(GDBWatch(exp))
         self.update_view()
 
     def toggle_breakpoint(self, filename, line):
@@ -1057,10 +1077,12 @@ def update_view_markers(view=None):
 count = 0
 
 
-def run_cmd(cmd, block=False, mimode=True):
+def run_cmd(cmd, block=False, mimode=True, timeout=10):
     global count
     if not is_running():
         return "0^error,msg=\"no session running\""
+
+    timeoutcount = timeout/0.001
 
     if mimode:
         count = count + 1
@@ -1074,11 +1096,11 @@ def run_cmd(cmd, block=False, mimode=True):
     if block:
         countstr = "%d^" % count
         i = 0
-        while not gdb_lastresult.startswith(countstr) and i < 10000:
+        while not gdb_lastresult.startswith(countstr) and i < timeoutcount:
             i += 1
             time.sleep(0.001)
-        if i >= 10000:
-            raise ValueError("Command \"%s\" took longer than 10 seconds to perform?" % cmd)
+        if i >= timeoutcount:
+            raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
         return gdb_lastresult
     return count
 
@@ -1315,7 +1337,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
             t = threading.Thread(target=programoutput, args=(os.fdopen(pipe),))
             t.start()
             try:
-                run_cmd("-gdb-show interpreter", True)
+                run_cmd("-gdb-show interpreter", True, timeout=20)
             except:
                 sublime.error_message("""\
 It seems you're not running gdb with the "mi" interpreter. Please add
@@ -1431,13 +1453,13 @@ class GdbAddWatch(sublime_plugin.TextCommand):
     def run(self, edit):
         if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
             var = gdb_variables_view.get_variable_at_line(self.view.rowcol(self.view.sel()[0].begin())[0])
-            if var != None and "exp" in var:
-                gdb_breakpoint_view.add_watch(var["exp"])
+            if var != None:
+                gdb_breakpoint_view.toggle_watch(var.get_expression())
             else:
                 sublime.status_message("Don't know how to watch that variable")
         else:
             exp = self.view.substr(self.view.word(self.view.sel()[0].begin()))
-            gdb_breakpoint_view.add_watch(exp)
+            gdb_breakpoint_view.toggle_watch(exp)
 
 
 class GdbToggleBreakpoint(sublime_plugin.TextCommand):
@@ -1449,7 +1471,11 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
             if row < len(gdb_breakpoint_view.breakpoints):
                 gdb_breakpoint_view.breakpoints[row].remove()
                 gdb_breakpoint_view.breakpoints.pop(row)
-                gdb_breakpoint_viewe.update_view()
+                gdb_breakpoint_view.update_view()
+        elif gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
+            var = gdb_variables_view.get_variable_at_line(self.view.rowcol(self.view.sel()[0].begin())[0])
+            if var != None:
+                gdb_breakpoint_view.toggle_watch(var.get_expression())
         else:
             for sel in self.view.sel():
                 line, col = self.view.rowcol(sel.a)
