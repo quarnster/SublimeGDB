@@ -43,5 +43,9 @@
     {
         "caption": "Open Variables View",
         "command": "gdb_open_variables_view"
+    },
+    {
+        "caption": "Add watch",
+        "command": "gdb_add_watch"
     }
 ]

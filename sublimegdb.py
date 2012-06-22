@@ -73,6 +73,8 @@ collapse_regex = re.compile("{.*}", re.DOTALL)
 
 
 def normalize(filename):
+    if filename is None:
+        return None
     return os.path.abspath(os.path.normcase(filename))
 
 
@@ -848,7 +850,7 @@ class GDBDisassemblyView(GDBView):
                             pos_scope, pos_icon, sublime.HIDDEN)
 
 
-class GDBBreakpoint:
+class GDBBreakpoint(object):
     def __init__(self, filename, line):
         self.original_filename = normalize(filename)
         self.original_line = line
@@ -921,6 +923,22 @@ class GDBBreakpoint:
     def format(self):
         return "%d - %s:%d\n" % (self.number, self.filename, self.line)
 
+class GDBWatch(GDBBreakpoint):
+    def __init__(self, exp):
+        self.exp = exp
+        super(GDBWatch, self).__init__(None, -1)
+
+    def insert(self):
+        out = run_cmd("-break-watch %s" % self.exp, True)
+        res = parse_result_line(out)
+        if get_result(out) == "error":
+            return
+
+        self.number = int(res["wpt"]["number"])
+
+    def format(self):
+        return "%d - watch: %s\n" % (self.number, self.exp)
+
 
 class GDBBreakpointView(GDBView):
     def __init__(self):
@@ -961,6 +979,10 @@ class GDBBreakpointView(GDBView):
                 return bkpt
         return None
 
+    def add_watch(self, exp):
+        self.breakpoints.append(GDBWatch(exp))
+        self.update_view()
+
     def toggle_breakpoint(self, filename, line):
         bkpt = self.find_breakpoint(filename, line)
         if bkpt:
@@ -982,7 +1004,7 @@ class GDBBreakpointView(GDBView):
             return
         pos = self.get_view().viewport_position()
         self.clear()
-        self.breakpoints.sort(key=lambda b: (b.filename, b.line))
+        self.breakpoints.sort(key=lambda b: (b.number, b.filename, b.line))
         for bkpt in self.breakpoints:
             self.add_line(bkpt.format())
         self.set_viewport_position(pos)
@@ -1405,13 +1427,33 @@ class GdbStepOut(sublime_plugin.WindowCommand):
         return is_running()
 
 
+class GdbAddWatch(sublime_plugin.TextCommand):
+    def run(self, edit):
+        if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
+            var = gdb_variables_view.get_variable_at_line(self.view.rowcol(self.view.sel()[0].begin())[0])
+            if var != None and "exp" in var:
+                gdb_breakpoint_view.add_watch(var["exp"])
+            else:
+                sublime.status_message("Don't know how to watch that variable")
+        else:
+            exp = self.view.substr(self.view.word(self.view.sel()[0].begin()))
+            gdb_breakpoint_view.add_watch(exp)
+
+
 class GdbToggleBreakpoint(sublime_plugin.TextCommand):
     def run(self, edit):
         fn = self.view.file_name()
 
-        for sel in self.view.sel():
-            line, col = self.view.rowcol(sel.a)
-            gdb_breakpoint_view.toggle_breakpoint(fn, line + 1)
+        if gdb_breakpoint_view.is_open() and self.view.id() == gdb_breakpoint_view.get_view().id():
+            row = self.view.rowcol(self.view.sel()[0].begin())[0]
+            if row < len(gdb_breakpoint_view.breakpoints):
+                gdb_breakpoint_view.breakpoints[row].remove()
+                gdb_breakpoint_view.breakpoints.pop(row)
+                gdb_breakpoint_viewe.update_view()
+        else:
+            for sel in self.view.sel():
+                line, col = self.view.rowcol(sel.a)
+                gdb_breakpoint_view.toggle_breakpoint(fn, line + 1)
         update_view_markers(self.view)
 
 
