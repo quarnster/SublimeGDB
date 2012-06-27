@@ -61,7 +61,7 @@ gdb_process = None
 gdb_stack_frame = None
 gdb_stack_index = 0
 
-gdb_nonstop = True
+gdb_nonstop = False
 
 if os.name == 'nt':
     gdb_nonstop = False
@@ -529,8 +529,17 @@ class GDBVariablesView(GDBView):
                 return [x["name"] for x in res]
         return []
 
+    def add_variable(self, exp):
+        v = self.create_variable(exp)
+        if v:
+            self.variables.append(v)
+
     def create_variable(self, exp):
         line = run_cmd("-var-create - * %s" % exp, True)
+        if get_result(line) == "error" and "&" in exp:
+            line = run_cmd("-var-create - * %s" % exp.replace("&", ""), True)
+        if get_result(line) == "error":
+            return None
         var = parse_result_line(line)
         var['exp'] = exp
         return GDBVariable(var)
@@ -574,7 +583,7 @@ class GDBVariablesView(GDBView):
                             create = False
                             break
                     if create:
-                        self.variables.append(self.create_variable(var))
+                        self.add_variable(var)
 
         if not sameFrame:
             for var in self.variables:
@@ -582,10 +591,10 @@ class GDBVariablesView(GDBView):
             args = self.extract_varnames(parse_result_line(run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True))["stack-args"]["frame"]["args"])
             self.variables = []
             for arg in args:
-                self.variables.append(self.create_variable(arg))
+                self.add_variable(arg)
             loc = self.extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
             for var in loc:
-                self.variables.append(self.create_variable(var))
+                self.add_variable(var)
         self.update_view()
 
     def get_variable_at_line(self, line, var_list=None):
@@ -933,6 +942,7 @@ class GDBBreakpoint(object):
 
     def format(self):
         return "%d - %s:%d\n" % (self.number, self.filename, self.line)
+
 
 class GDBWatch(GDBBreakpoint):
     def __init__(self, exp):
@@ -1311,7 +1321,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
 
             gdb_bkp_window = sublime.active_window()
             #back up current layout before opening the debug one
-            #it will be restored when debog is finished
+            #it will be restored when debug is finished
             gdb_bkp_layout = gdb_bkp_window.get_layout()
             gdb_bkp_view = gdb_bkp_window.active_view()
             gdb_bkp_window.set_layout(
