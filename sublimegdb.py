@@ -35,16 +35,49 @@ from resultparser import parse_result_line
 from types import ListType
 
 
-def get_setting(key, default=None):
+def get_setting(key, default=None, view=None):
     try:
-        s = sublime.active_window().active_view().settings()
+        if view == None:
+            view = sublime.active_window().active_view()
+        s = view.settings()
         if s.has("sublimegdb_%s" % key):
             return s.get("sublimegdb_%s" % key)
     except:
         pass
     return sublime.load_settings("SublimeGDB.sublime-settings").get(key, default)
 
-DEBUG = get_setting("debug", False)
+
+def expand_path(value, window):
+    value = value % ({'home': os.getenv('HOME')})
+    if window == None:
+        # Views can apparently be window less, in most instances getting
+        # the active_window will be the right choice (for example when
+        # previewing a file), but the one instance this is incorrect
+        # is during Sublime Text 2 session restore. Apparently it's
+        # possible for views to be windowless then too and since it's
+        # possible that multiple windows are to be restored, the
+        # "wrong" one for this view might be the active one and thus
+        # ${project_path} will not be expanded correctly.
+        #
+        # This will have to remain a known documented issue unless
+        # someone can think of something that should be done plugin
+        # side to fix this.
+        window = sublime.active_window()
+
+    get_existing_files = \
+        lambda m: [ path \
+            for f in window.folders() \
+            for path in [os.path.join(f, m.group('file'))] \
+            if os.path.exists(path) \
+        ]
+    value = re.sub(r'\${project_path:(?P<file>[^}]+)}', lambda m: len(get_existing_files(m)) > 0 and get_existing_files(m)[0] or m.group('file'), value)
+    value = re.sub(r'\${folder:(?P<file>.*)}', lambda m: os.path.dirname(m.group('file')), value)
+    value = value.replace('\\', '/')
+
+    return value
+
+
+DEBUG = get_setting("debug", True)
 DEBUG_FILE = get_setting("debug_file", "/tmp/sublimegdb.txt")
 
 gdb_lastresult = ""
@@ -1312,11 +1345,12 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         global gdb_bkp_layout
         global gdb_shutting_down
         if gdb_process == None or gdb_process.poll() != None:
-            commandline = get_setting("commandline")
+            commandline = get_setting("commandline", self.window.active_view())
             if isinstance(commandline, list):
                 # backwards compatibility for when the commandline was a list
                 commandline = " ".join(commandline)
-            gdb_process = subprocess.Popen(commandline, shell=True, cwd=get_setting("workingdir", "/tmp"),
+            path = expand_path(get_setting("workingdir", "/tmp", self.window.active_view()), self.window)
+            gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
             gdb_bkp_window = sublime.active_window()
