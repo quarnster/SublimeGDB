@@ -45,7 +45,20 @@
     },
     {
         "command": "gdb_step_over",
-        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
+        "context":
+        [
+            {"key": "gdb_running", "operator": "equal", "operand": true},
+            {"key": "gdb_disassembly_view", "operand": false}
+        ],
+        "keys": ["f10"]
+    },
+    {
+        "command": "gdb_next_instruction",
+        "context":
+        [
+            {"key": "gdb_running", "operator": "equal", "operand": true},
+            {"key": "gdb_disassembly_view", "operand": true}
+        ],
         "keys": ["f10"]
     },
     {

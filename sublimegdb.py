@@ -48,7 +48,6 @@ def get_setting(key, default=None, view=None):
 
 
 def expand_path(value, window):
-    value = value % ({'home': os.getenv('HOME')})
     if window == None:
         # Views can apparently be window less, in most instances getting
         # the active_window will be the right choice (for example when
@@ -71,6 +70,8 @@ def expand_path(value, window):
             if os.path.exists(path) \
         ]
     value = re.sub(r'\${project_path:(?P<file>[^}]+)}', lambda m: len(get_existing_files(m)) > 0 and get_existing_files(m)[0] or m.group('file'), value)
+    value = re.sub(r'\${env:(?P<variable>.*)}', lambda m: os.getenv(m.group('variable')), value)
+    value = re.sub(r'\${home}', os.getenv('HOME'), value)
     value = re.sub(r'\${folder:(?P<file>.*)}', lambda m: os.path.dirname(m.group('file')), value)
     value = value.replace('\\', '/')
 
@@ -863,7 +864,10 @@ class GDBDisassemblyView(GDBView):
     def add_insns(self, src_asm):
         for asm in src_asm:
             line = "%s: %s" % (asm["address"], asm["inst"])
-            self.add_line("%-80s # %s+%s\n" % (line, asm["func-name"], asm["offset"]))
+            if "func-name" in asm:
+                self.add_line("%-80s # %s+%s\n" % (line, asm["func-name"], asm["offset"]))
+            else:
+                self.add_line("%s\n" % line)
             addr = int(asm["address"], 16)
             if self.start == -1 or addr < self.start:
                 self.start = addr
@@ -880,16 +884,17 @@ class GDBDisassemblyView(GDBView):
             l = run_cmd("-data-disassemble -s $pc -e \"$pc+200\" -- 1", True)
             asms = parse_result_line(l)
             self.clear()
-            asms = asms["asm_insns"]
-            if "src_and_asm_line" in asms:
-                l = listify(asms["src_and_asm_line"])
-                for src_asm in l:
-                    line = src_asm["line"]
-                    file = src_asm["file"]
-                    self.add_line("%s:%s\n" % (file, line))
-                    self.add_insns(src_asm["line_asm_insn"])
-            else:
-                self.add_insns(asms)
+            if get_result(l) != "error":
+                asms = asms["asm_insns"]
+                if "src_and_asm_line" in asms:
+                    l = listify(asms["src_and_asm_line"])
+                    for src_asm in l:
+                        line = src_asm["line"]
+                        file = src_asm["file"]
+                        self.add_line("%s:%s\n" % (file, line))
+                        self.add_insns(src_asm["line_asm_insn"])
+                else:
+                    self.add_insns(asms)
             self.update()
         view = self.get_view()
         reg = view.find("^0x[0]*%x:" % pc, 0)
@@ -1349,7 +1354,10 @@ class GdbLaunch(sublime_plugin.WindowCommand):
             if isinstance(commandline, list):
                 # backwards compatibility for when the commandline was a list
                 commandline = " ".join(commandline)
+            commandline = expand_path(commandline, self.window)
             path = expand_path(get_setting("workingdir", "/tmp", self.window.active_view()), self.window)
+            print "Running: %s" % commandline
+            print "In directory: %s" % path
             gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
@@ -1392,8 +1400,8 @@ It seems you're not running gdb with the "mi" interpreter. Please add
 
             run_cmd("-gdb-set target-async 1")
             run_cmd("-gdb-set pagination off")
-            if gdb_nonstop:
-                run_cmd("-gdb-set non-stop on")
+            # if gdb_nonstop:
+            #     run_cmd("-gdb-set non-stop on")
 
             gdb_breakpoint_view.sync_breakpoints()
             gdb_run_status = "running"
@@ -1624,6 +1632,8 @@ class GdbEventListener(sublime_plugin.EventListener):
             v = gdb_variables_view
             if key.startswith("gdb_register_view"):
                 v = gdb_register_view
+            elif key.startswith("gdb_disassembly_view"):
+                v = gdb_disassembly_view
             if key.endswith("open"):
                 return v.is_open() == operand
             else:
