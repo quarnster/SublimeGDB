@@ -127,7 +127,7 @@ class GDBView(object):
         self.settingsprefix = settingsprefix
         self.timer = None
         self.lines = ""
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
     def is_open(self):
         return not self.closed
@@ -163,8 +163,8 @@ class GDBView(object):
             lines = self.lines
             self.lines = ""
             self.timer = None
-            sublime.set_timeout(self.update, 0)
             self.queue.put((self.do_add_line, lines))
+            sublime.set_timeout(self.update, 0)
         finally:
             self.lock.release()
 
@@ -177,9 +177,7 @@ class GDBView(object):
                 if self.timer:
                     self.timer.cancel()
                 if self.lines.count("\n") > 10:
-                    self.lock.release()
                     self.timed_add()
-                    self.lock.acquire()
                 else:
                     self.timer = threading.Timer(0.1, self.timed_add)
                     self.timer.start()
