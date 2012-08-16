@@ -125,6 +125,9 @@ class GDBView(object):
         self.doScroll = s
         self.view = None
         self.settingsprefix = settingsprefix
+        self.timer = None
+        self.lines = ""
+        self.lock = threading.Lock()
 
     def is_open(self):
         return not self.closed
@@ -153,13 +156,35 @@ class GDBView(object):
         if self.is_open():
             self.get_view().set_syntax_file(syntax)
 
-    def add_line(self, line, now=False):
+
+    def timed_add(self):
+        try:
+            self.lock.acquire()
+            lines = self.lines
+            self.lines = ""
+            self.timer = None
+            sublime.set_timeout(self.update, 0)
+            self.queue.put((self.do_add_line, lines))
+        finally:
+            self.lock.release()
+
+
+    def add_line(self, line):
         if self.is_open():
-            if not now:
-                self.queue.put((self.do_add_line, line))
-                sublime.set_timeout(self.update, 0)
-            else:
-                self.do_add_line(line)
+            try:
+                self.lock.acquire()
+                self.lines += line
+                if self.timer:
+                    self.timer.cancel()
+                if self.lines.count("\n") > 10:
+                    self.lock.release()
+                    self.timed_add()
+                    self.lock.acquire()
+                else:
+                    self.timer = threading.Timer(0.1, self.timed_add)
+                    self.timer.start()
+            finally:
+                self.lock.release()
 
     def scroll(self, line):
         if self.is_open():
@@ -193,6 +218,7 @@ class GDBView(object):
         sublime.active_window().focus_view(self.view)
         sublime.active_window().run_command("close")
         self.view = None
+        self.closed = True
 
     def is_closed(self):
         return self.closed
@@ -881,7 +907,7 @@ class GDBDisassemblyView(GDBView):
             pc = pc[:pc.find(" ")]
         pc = int(pc, 16)
         if not (pc >= self.start and pc <= self.end):
-            l = run_cmd("-data-disassemble -s $pc -e \"$pc+200\" -- 1", True)
+            l = run_cmd("-data-disassemble -s \"$pc-32\" -e \"$pc+200\" -- 1", True)
             asms = parse_result_line(l)
             self.clear()
             if get_result(l) != "error":
