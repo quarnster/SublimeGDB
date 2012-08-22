@@ -71,14 +71,16 @@ def expand_path(value, window):
         ]
     value = re.sub(r'\${project_path:(?P<file>[^}]+)}', lambda m: len(get_existing_files(m)) > 0 and get_existing_files(m)[0] or m.group('file'), value)
     value = re.sub(r'\${env:(?P<variable>.*)}', lambda m: os.getenv(m.group('variable')), value)
-    value = re.sub(r'\${home}', re.escape(os.getenv('HOME')) if os.getenv("HOME") else "HOME_NOT_SET", value)
+    if os.getenv("HOME"):
+        value = re.sub(r'\${home}', re.escape(os.getenv('HOME')), value)
     value = re.sub(r'\${folder:(?P<file>.*)}', lambda m: os.path.dirname(m.group('file')), value)
-    value = value.replace('\\', '/')
+    value = value.replace('\\', os.sep)
+    value = value.replace('/', os.sep)
 
     return value
 
 
-DEBUG = get_setting("debug", True)
+DEBUG = get_setting("debug", False)
 DEBUG_FILE = get_setting("debug_file", "/tmp/sublimegdb.txt")
 
 gdb_lastresult = ""
