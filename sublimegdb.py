@@ -171,14 +171,14 @@ class GDBView(object):
             self.lock.release()
 
 
-    def add_line(self, line):
+    def add_line(self, line, now=True):
         if self.is_open():
             try:
                 self.lock.acquire()
                 self.lines += line
                 if self.timer:
                     self.timer.cancel()
-                if self.lines.count("\n") > 10:
+                if self.lines.count("\n") > 10 or now:
                     self.timed_add()
                 else:
                     self.timer = threading.Timer(0.1, self.timed_add)
@@ -1165,7 +1165,7 @@ def run_cmd(cmd, block=False, mimode=True, timeout=10):
         cmd = "%s\n\n" % cmd
     log_debug(cmd)
     if gdb_session_view != None:
-        gdb_session_view.add_line(cmd)
+        gdb_session_view.add_line(cmd, False)
     gdb_process.stdin.write(cmd)
     if block:
         countstr = "%d^" % count
@@ -1272,7 +1272,7 @@ def gdboutput(pipe):
 
             if len(line) > 0:
                 log_debug(line)
-                gdb_session_view.add_line("%s\n" % line)
+                gdb_session_view.add_line("%s\n" % line, False)
 
                 run_status = run_status_regex.match(line)
                 if run_status != None:
@@ -1292,7 +1292,7 @@ def gdboutput(pipe):
 
                 if line.startswith("~"):
                     gdb_console_view.add_line(
-                        line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t"))
+                        line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t"), False)
 
         except:
             traceback.print_exc()
@@ -1328,7 +1328,7 @@ def programoutput(pipe):
             proc = gdb_process.poll() != None
             line = pipe.readline()
             if len(line) > 0:
-                gdb_console_view.add_line(line)
+                gdb_console_view.add_line(line, False)
             else:
                 if proc:
                     break
