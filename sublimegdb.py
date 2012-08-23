@@ -1340,13 +1340,49 @@ def programoutput(pipe):
         pipe.close()
 
 
+gdb_input_view = None
+gdb_command_history = []
+gdb_command_history_pos = 0
+
+
+def set_input(edit, text):
+    gdb_input_view.erase(edit, sublime.Region(0, gdb_input_view.size()))
+    gdb_input_view.insert(edit, 0, text)
+
+
+class GdbPrevCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        global gdb_command_history_pos
+        if gdb_command_history_pos > 0:
+            gdb_command_history_pos -= 1
+        print "prev: %d, %d, %s" % (gdb_command_history_pos, len(gdb_command_history), "None" if gdb_command_history_pos >= len(gdb_command_history) else gdb_command_history[gdb_command_history_pos])
+        if gdb_command_history_pos < len(gdb_command_history):
+            set_input(edit, gdb_command_history[gdb_command_history_pos])
+
+
+class GdbNextCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        global gdb_command_history_pos
+        if gdb_command_history_pos < len(gdb_command_history):
+            gdb_command_history_pos += 1
+        print "next: %d, %d, %s" % (gdb_command_history_pos, len(gdb_command_history), "None" if gdb_command_history_pos >= len(gdb_command_history) else gdb_command_history[gdb_command_history_pos])
+        if gdb_command_history_pos < len(gdb_command_history):
+            set_input(edit, gdb_command_history[gdb_command_history_pos])
+        else:
+            set_input(edit, "")
+
+
 def show_input():
-    sublime.active_window().show_input_panel("GDB", "", input_on_done, input_on_change, input_on_cancel)
+    global gdb_input_view
+    global gdb_command_history_pos
+    gdb_command_history_pos = len(gdb_command_history)
+    gdb_input_view = sublime.active_window().show_input_panel("GDB", "", input_on_done, input_on_change, input_on_cancel)
 
 
 def input_on_done(s):
     run_cmd(s)
     if s.strip() != "quit":
+        gdb_command_history.append(s)
         show_input()
 
 
@@ -1654,6 +1690,8 @@ class GdbEventListener(sublime_plugin.EventListener):
     def on_query_context(self, view, key, operator, operand, match_all):
         if key == "gdb_running":
             return is_running() == operand
+        elif key == "gdb_input_view":
+            return gdb_input_view != None and view.id() == gdb_input_view.id()
         elif key.startswith("gdb_"):
             v = gdb_variables_view
             if key.startswith("gdb_register_view"):

@@ -80,5 +80,15 @@
         "command": "gdb_open_disassembly_view",
         "context": [{"key": "gdb_disassembly_view_open", "operator": "equal", "operand": false }],
         "keys": ["ctrl+f11"]
+    },
+    {
+        "command": "gdb_prev_command",
+        "context": [{"key": "gdb_input_view"}],
+        "keys": ["up"]
+    },
+    {
+        "command": "gdb_next_command",
+        "context": [{"key": "gdb_input_view"}],
+        "keys": ["down"]
     }
 ]
