@@ -1350,22 +1350,20 @@ def set_input(edit, text):
     gdb_input_view.insert(edit, 0, text)
 
 
-class GdbPrevCommand(sublime_plugin.TextCommand):
+class GdbPrevCmd(sublime_plugin.TextCommand):
     def run(self, edit):
         global gdb_command_history_pos
         if gdb_command_history_pos > 0:
             gdb_command_history_pos -= 1
-        print "prev: %d, %d, %s" % (gdb_command_history_pos, len(gdb_command_history), "None" if gdb_command_history_pos >= len(gdb_command_history) else gdb_command_history[gdb_command_history_pos])
         if gdb_command_history_pos < len(gdb_command_history):
             set_input(edit, gdb_command_history[gdb_command_history_pos])
 
 
-class GdbNextCommand(sublime_plugin.TextCommand):
+class GdbNextCmd(sublime_plugin.TextCommand):
     def run(self, edit):
         global gdb_command_history_pos
         if gdb_command_history_pos < len(gdb_command_history):
             gdb_command_history_pos += 1
-        print "next: %d, %d, %s" % (gdb_command_history_pos, len(gdb_command_history), "None" if gdb_command_history_pos >= len(gdb_command_history) else gdb_command_history[gdb_command_history_pos])
         if gdb_command_history_pos < len(gdb_command_history):
             set_input(edit, gdb_command_history[gdb_command_history_pos])
         else:
@@ -1379,11 +1377,12 @@ def show_input():
     gdb_input_view = sublime.active_window().show_input_panel("GDB", "", input_on_done, input_on_change, input_on_cancel)
 
 
+
 def input_on_done(s):
-    run_cmd(s)
     if s.strip() != "quit":
-        gdb_command_history.append(s)
         show_input()
+        gdb_command_history.append(s)
+    run_cmd(s)
 
 
 def input_on_cancel():

@@ -82,12 +82,12 @@
         "keys": ["ctrl+f11"]
     },
     {
-        "command": "gdb_prev_command",
+        "command": "gdb_prev_cmd",
         "context": [{"key": "gdb_input_view"}],
         "keys": ["up"]
     },
     {
-        "command": "gdb_next_command",
+        "command": "gdb_next_cmd",
         "context": [{"key": "gdb_input_view"}],
         "keys": ["down"]
     }
