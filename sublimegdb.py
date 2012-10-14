@@ -1158,6 +1158,12 @@ def run_cmd(cmd, block=False, mimode=True, timeout=10):
 
     timeoutcount = timeout/0.001
 
+    ### handle a list of commands by recursively calling run_cmd
+    if isinstance(cmd, list):
+        for c in cmd:
+            run_cmd(c, block, mimode, timeout)
+        return count
+
     if mimode:
         count = count + 1
         cmd = "%d%s\n" % (count, cmd)
