@@ -82,6 +82,7 @@ def expand_path(value, window):
 
 DEBUG = get_setting("debug", False)
 DEBUG_FILE = get_setting("debug_file", "/tmp/sublimegdb.txt")
+__debug_file_handle = None
 
 gdb_lastresult = ""
 gdb_lastline = ""
@@ -115,8 +116,16 @@ def normalize(filename):
 
 
 def log_debug(line):
+    global __debug_file_handle
+    global DEBUG
     if DEBUG:
-        os.system("echo \"%s\" >> \"%s\"" % (line, DEBUG_FILE))
+        try:
+            if __debug_file_handle == None:
+                __debug_file_handle = open(DEBUG_FILE, 'a')
+            __debug_file_handle.write(line)
+        except:
+            sublime.error_message("Couldn't write to the debug file. Debug writes will be disabled for this session.\n\nDebug file name used:\n%s\n\nError message\n:%s" % (DEBUG_FILE, traceback.format_exc()))
+            DEBUG = False
 
 
 class GDBView(object):
@@ -1270,12 +1279,12 @@ def gdboutput(pipe):
     global gdb_stack_index
     command_result_regex = re.compile("^\d+\^")
     run_status_regex = re.compile("(^\d*\*)([^,]+)")
-    
+
     # Cygwin Support
     cygwin_driver_regex = re.compile(r"/cygdrive/([a-zA-Z])/")
     def cygwin_driver_repl(matchobj):
         return "%s:/" % matchobj.groups()[0]
-        
+
     while True:
         try:
             if gdb_process.poll() != None:
@@ -1326,12 +1335,16 @@ def gdboutput(pipe):
 
 
 def cleanup():
+    global __debug_file_handle
     if get_setting("close_views", True):
         for view in gdb_views:
             view.close()
     if get_setting("push_pop_layout", True):
         gdb_bkp_window.set_layout(gdb_bkp_layout)
         gdb_bkp_window.focus_view(gdb_bkp_view)
+    if __debug_file_handle != None:
+        __debug_file_handle.close()
+        __debug_file_handle = None
 
 
 def programoutput(pipe):
@@ -1424,13 +1437,18 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         global gdb_bkp_view
         global gdb_bkp_layout
         global gdb_shutting_down
+        global DEBUG
+        global DEBUG_FILE
+        view = self.window.active_view()
+        DEBUG = get_setting("debug", False, view)
+        DEBUG_FILE = get_setting("debug_file", "/tmp/sublimegdb.txt", view)
         if gdb_process == None or gdb_process.poll() != None:
-            commandline = get_setting("commandline", self.window.active_view())
+            commandline = get_setting("commandline", view=view)
             if isinstance(commandline, list):
                 # backwards compatibility for when the commandline was a list
                 commandline = " ".join(commandline)
             commandline = expand_path(commandline, self.window)
-            path = expand_path(get_setting("workingdir", "/tmp", self.window.active_view()), self.window)
+            path = expand_path(get_setting("workingdir", "/tmp", view), self.window)
             print "Running: %s" % commandline
             print "In directory: %s" % path
             gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
