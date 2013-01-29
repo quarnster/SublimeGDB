@@ -1,4 +1,5 @@
-
+import codecs
+decoder = codecs.getdecoder('unicode_escape')
 
 def add(d, key, value):
     if len(key) == 0:
@@ -31,7 +32,7 @@ def _parse_result_line(line):
         if inComment:
             if c == "\"":
                 inComment = False
-                value = line[start:i].decode("string-escape")
+                value = decoder(line[start:i])[0]
                 d = add(d, key, value)
                 key = ""
                 start = i + 1

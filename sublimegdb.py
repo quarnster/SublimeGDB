@@ -29,12 +29,14 @@ import threading
 import time
 import traceback
 import os
+import sys
 import re
 try:
     import Queue
+    from resultparser import parse_result_line
 except:
-    import queue
-from SublimeGDB.resultparser import parse_result_line
+    import queue as Queue
+    from SublimeGDB.resultparser import parse_result_line
 
 def get_setting(key, default=None, view=None):
     try:
@@ -131,10 +133,7 @@ def log_debug(line):
 
 class GDBView(object):
     def __init__(self, name, s=True, settingsprefix=None):
-        try:
-            self.queue = Queue.Queue()
-        except:
-            self.queue = queue.Queue()
+        self.queue = Queue.Queue()
         self.name = name
         self.closed = True
         self.doScroll = s
@@ -247,23 +246,13 @@ class GDBView(object):
         return self.view
 
     def do_add_line(self, line):
-        self.view.set_read_only(False)
-        e = self.view.begin_edit()
-        self.view.insert(e, self.view.size(), line)
-        self.view.end_edit(e)
-        self.view.set_read_only(True)
-        if self.doScroll:
-            self.view.show(self.view.size())
+        self.view.run_command("gdb_view_add_line", {"line": line, "doScroll": self.doScroll})
 
     def do_fold_all(self, data):
         self.view.run_command("fold_all")
 
     def do_clear(self, data):
-        self.view.set_read_only(False)
-        e = self.view.begin_edit()
-        self.view.erase(e, sublime.Region(0, self.view.size()))
-        self.view.end_edit(e)
-        self.view.set_read_only(True)
+        self.view.run_command("gdb_view_clear")
 
     def do_scroll(self, data):
         self.view.run_command("goto_line", {"line": data + 1})
@@ -294,6 +283,20 @@ class GDBView(object):
         if get_setting("%s_clear_on_end" % self.settingsprefix, True):
             self.clear()
 
+
+class GdbViewClear(sublime_plugin.TextCommand):
+    def run(self, edit):
+        self.view.set_read_only(False)
+        self.view.erase(edit, sublime.Region(0, self.view.size()))
+        self.view.set_read_only(True)
+
+class GdbViewAddLine(sublime_plugin.TextCommand):
+    def run(self, edit, line, doScroll):
+        self.view.set_read_only(False)
+        self.view.insert(edit, self.view.size(), line)
+        self.view.set_read_only(True)
+        if doScroll:
+            self.view.show(self.view.size())
 
 class GDBVariable:
     def __init__(self, vp=None, parent=None):
@@ -452,7 +455,7 @@ class GDBRegister:
 
     def format(self, line=0):
         val = self.value
-        if  "{" not in val:
+        if  "{" not in val and re.match(r"[\da-yA-Fx]+", val):
             valh = int(val, 16)&0xffffffffffffffffffffffffffffffff
             six4 = False
             if valh > 0xffffffff:
@@ -987,7 +990,9 @@ class GDBBreakpoint(object):
         self.number = int(bp["number"])
 
     def insert(self):
-        cmd = "-break-insert \"\\\"%s\\\":%d\"" % (self.original_filename.encode("unicode-escape"), self.original_line)
+        # TODO: does removing the unicode-escape break things? what's the proper way to handle this in python3?
+        # cmd = "-break-insert \"\\\"%s\\\":%d\"" % (self.original_filename.encode("unicode-escape"), self.original_line)
+        cmd = "-break-insert \"\\\"%s\\\":%d\"" % (self.original_filename, self.original_line)
         out = run_cmd(cmd, True)
         if get_result(out) == "error":
             return
@@ -1185,7 +1190,7 @@ def run_cmd(cmd, block=False, mimode=True, timeout=10):
     log_debug(cmd)
     if gdb_session_view != None:
         gdb_session_view.add_line(cmd, False)
-    gdb_process.stdin.write(cmd)
+    gdb_process.stdin.write(cmd.encode(sys.getdefaultencoding()))
     if block:
         countstr = "%d^" % count
         i = 0
@@ -1293,7 +1298,7 @@ def gdboutput(pipe):
         try:
             if gdb_process.poll() != None:
                 break
-            line = pipe.readline().strip()
+            line = pipe.readline().strip().decode(sys.getdefaultencoding())
             # Cygwin Support
             line = re.sub(cygwin_driver_regex, cygwin_driver_repl, line)
 
