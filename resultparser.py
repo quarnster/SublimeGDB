@@ -1,4 +1,3 @@
-from types import ListType
 
 
 def add(d, key, value):
@@ -11,7 +10,7 @@ def add(d, key, value):
         if key not in d:
             d[key] = value
         else:
-            if not type(d[key]) is ListType:
+            if not isinstance(d[key], list):
                 tmp = d[key]
                 d[key] = []
                 d[key].append(tmp)

@@ -30,10 +30,11 @@ import time
 import traceback
 import os
 import re
-import Queue
-from resultparser import parse_result_line
-from types import ListType
-
+try:
+    import Queue
+except:
+    import queue
+from SublimeGDB.resultparser import parse_result_line
 
 def get_setting(key, default=None, view=None):
     try:
@@ -130,7 +131,10 @@ def log_debug(line):
 
 class GDBView(object):
     def __init__(self, name, s=True, settingsprefix=None):
-        self.queue = Queue.Queue()
+        try:
+            self.queue = Queue.Queue()
+        except:
+            self.queue = queue.Queue()
         self.name = name
         self.closed = True
         self.doScroll = s
@@ -593,7 +597,7 @@ class GDBVariablesView(GDBView):
     def extract_varnames(self, res):
         if "name" in res:
             return listify(res["name"])
-        elif len(res) > 0 and type(res) is ListType:
+        elif len(res) > 0 and isinstance(res, list):
             if "name" in res[0]:
                 return [x["name"] for x in res]
         return []
@@ -1203,7 +1207,7 @@ def wait_until_stopped():
                 i = i + 1
                 time.sleep(0.1)
             if i >= 100:
-                print "I'm confused... I think status is %s, but it seems it wasn't..." % gdb_run_status
+                print("I'm confused... I think status is %s, but it seems it wasn't..." % gdb_run_status)
                 return False
             return True
     return False
@@ -1220,7 +1224,7 @@ def get_result(line):
 
 
 def listify(var):
-    if not type(var) is ListType:
+    if not isinstance(var, list):
         return [var]
     return var
 
@@ -1234,7 +1238,7 @@ def update_cursor():
     res = run_cmd("-stack-info-frame", True)
     if get_result(res) == "error":
         if gdb_run_status != "running":
-            print "run_status is %s, but got error: %s" % (gdb_run_status, res)
+            print("run_status is %s, but got error: %s" % (gdb_run_status, res))
         return
     currFrame = parse_result_line(res)["frame"]
     gdb_stack_index = int(currFrame["level"])
@@ -1449,8 +1453,8 @@ class GdbLaunch(sublime_plugin.WindowCommand):
                 commandline = " ".join(commandline)
             commandline = expand_path(commandline, self.window)
             path = expand_path(get_setting("workingdir", "/tmp", view), self.window)
-            print "Running: %s" % commandline
-            print "In directory: %s" % path
+            print("Running: %s" % commandline)
+            print("In directory: %s" % path)
             gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
