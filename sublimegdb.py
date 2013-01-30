@@ -444,6 +444,13 @@ class GDBVariable:
             dirty.append(self)
         return (output, line)
 
+def qtod(q):
+    val = struct.pack("Q", q)
+    return struct.unpack("d", val)[0]
+
+def itof(i):
+    val = struct.pack("I", i)
+    return struct.unpack("f", val)[0]
 
 class GDBRegister:
     def __init__(self, name, index, val):
@@ -466,6 +473,13 @@ class GDBRegister:
             vali = struct.unpack("q" if six4 else "i", val)[0]
 
             val = "0x%016x %16.8f %020d %020d" % (valh, valf, valI, vali)
+        elif "{" in val:
+            match = re.search(r"(.*v4_float\s*=\s*\{)([^}]+)(\}.*v4_int32\s*=\s*\{([^\}]+)\}.*)", val)
+            if match:
+                floats = re.findall(r"0x[^,\}]+", match.group(4))
+                if len(floats) == 4:
+                    floats = [str(itof(int(f, 16))) for f in floats]
+                    val = match.expand(r"\g<1>%s\g<3>" % ", ".join(floats))
         output = "%8s: %s\n" % (self.name, val)
         self.line = line
         line += output.count("\n")
