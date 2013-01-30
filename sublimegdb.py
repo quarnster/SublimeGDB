@@ -1270,19 +1270,12 @@ def gdboutput(pipe):
     global gdb_stack_index
     command_result_regex = re.compile("^\d+\^")
     run_status_regex = re.compile("(^\d*\*)([^,]+)")
-    
-    # Cygwin Support
-    cygwin_driver_regex = re.compile(r"/cygdrive/([a-zA-Z])/")
-    def cygwin_driver_repl(matchobj):
-        return "%s:/" % matchobj.groups()[0]
-        
+
     while True:
         try:
             if gdb_process.poll() != None:
                 break
             line = pipe.readline().strip()
-            # Cygwin Support
-            line = re.sub(cygwin_driver_regex, cygwin_driver_repl, line)
 
             if len(line) > 0:
                 log_debug(line)
