@@ -1,7 +1,22 @@
 import codecs
+import os
+import re
+import sublime
+
+cygwin_drive_regex = re.compile(r"^/cygdrive/([a-zA-Z])/")
 decoder = codecs.getdecoder('unicode_escape')
 
+def cygwin_path_handle(path):
+    """Cygwin Path Support"""
+    if sublime.platform() == "windows":
+        return os.path.normcase(re.sub(cygwin_drive_regex, lambda m: "%s:/" % m.groups()[0], path))
+    else:
+        return path  # do nothing if it is not under windows.
+
+
 def add(d, key, value):
+    if key == "file" or key == "fullname" or key == "original-location" or key == "from":
+        value = cygwin_path_handle(value)
     if len(key) == 0:
         if len(d) == 0:
             d = []
