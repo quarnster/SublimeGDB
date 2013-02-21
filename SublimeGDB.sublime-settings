@@ -81,5 +81,12 @@
 
     // If set to true will close the gdb views when the
     // debugging session ends
-    "close_views": true
+    "close_views": true,
+
+    // File to optionally write all the raw data read from and written to the gdb session and the inferior program.
+    // Setting it to "stdout" will write the output to the python console
+    "debug_file": "stdout",
+
+    // Whether to log the raw data read from and written to the gdb session and the inferior program.
+    "debug": false
 }

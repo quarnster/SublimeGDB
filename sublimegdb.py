@@ -34,7 +34,30 @@ import re
 try:
     import Queue
     from resultparser import parse_result_line
+
+    def sencode(s):
+        return s.encode("utf-8")
+
+    def sdecode(s):
+        return s
+
+    def bencode(s):
+        return s
+    def bdecode(s):
+        return s
 except:
+    def sencode(s):
+        return s
+
+    def sdecode(s):
+        return s
+
+    def bencode(s):
+        return s.encode("utf-8")
+
+    def bdecode(s):
+        return s.decode("utf-8")
+
     import queue as Queue
     from SublimeGDB.resultparser import parse_result_line
 
@@ -83,8 +106,8 @@ def expand_path(value, window):
     return value
 
 
-DEBUG = get_setting("debug", False)
-DEBUG_FILE = get_setting("debug_file", "/tmp/sublimegdb.txt")
+DEBUG = None
+DEBUG_FILE = None
 __debug_file_handle = None
 
 gdb_lastresult = ""
@@ -124,7 +147,10 @@ def log_debug(line):
     if DEBUG:
         try:
             if __debug_file_handle == None:
-                __debug_file_handle = open(DEBUG_FILE, 'a')
+                if DEBUG_FILE == "stdout":
+                    __debug_file_handle = sys.stdout
+                else:
+                    __debug_file_handle = open(DEBUG_FILE, 'a')
             __debug_file_handle.write(line)
         except:
             sublime.error_message("Couldn't write to the debug file. Debug writes will be disabled for this session.\n\nDebug file name used:\n%s\n\nError message\n:%s" % (DEBUG_FILE, traceback.format_exc()))
@@ -965,9 +991,10 @@ class GDBDisassemblyView(GDBView):
 
 
 class GDBBreakpoint(object):
-    def __init__(self, filename, line):
+    def __init__(self, filename="", line=0, addr=""):
         self.original_filename = normalize(filename)
         self.original_line = line
+        self.addr = addr
         self.clear()
         self.add()
 
@@ -996,17 +1023,24 @@ class GDBBreakpoint(object):
             self.resolved_filename = bp["fullname"]
         elif "file" in bp:
             self.resolved_filename = bp["file"]
-        else:
+        elif "original-location" in bp and self.addr == 0:
             self.resolved_filename = bp["original-location"].split(":", 1)[0]
+            self.resolved_line = int(bp["original-location"].split(":", 1)[1])
+
+        if self.resolved_line == 0 and "line" in bp:
+            self.resolved_line = int(bp["line"])
+
         if not "/" in self.resolved_filename and not "\\" in self.resolved_filename:
             self.resolved_filename = self.original_filename
-        self.resolved_line = int(bp["line"] if "line" in bp else bp["original-location"].split(":", 1)[1])
         self.number = int(bp["number"])
 
     def insert(self):
         # TODO: does removing the unicode-escape break things? what's the proper way to handle this in python3?
         # cmd = "-break-insert \"\\\"%s\\\":%d\"" % (self.original_filename.encode("unicode-escape"), self.original_line)
-        cmd = "-break-insert \"\\\"%s\\\":%d\"" % (self.original_filename, self.original_line)
+        if self.addr != "":
+            cmd = "-break-insert *%s" % self.addr
+        else:
+            cmd = "-break-insert \"\\\"%s\\\":%d\"" % (self.original_filename, self.original_line)
         out = run_cmd(cmd, True)
         if get_result(out) == "error":
             return
@@ -1096,6 +1130,12 @@ class GDBBreakpointView(GDBView):
                 return bkpt
         return None
 
+    def find_breakpoint_addr(self, addr):
+        for bkpt in self.breakpoints:
+            if bkpt.addr == addr:
+                return bkpt
+        return None
+
     def toggle_watch(self, exp):
         add = True
         for bkpt in self.breakpoints:
@@ -1107,6 +1147,15 @@ class GDBBreakpointView(GDBView):
 
         if add:
             self.breakpoints.append(GDBWatch(exp))
+        self.update_view()
+
+    def toggle_breakpoint_addr(self, addr):
+        bkpt = self.find_breakpoint_addr(addr)
+        if bkpt:
+            bkpt.remove()
+            self.breakpoints.remove(bkpt)
+        else:
+            self.breakpoints.append(GDBBreakpoint(addr=addr))
         self.update_view()
 
     def toggle_breakpoint(self, filename, line):
@@ -1155,7 +1204,6 @@ gdb_disassembly_view = GDBDisassemblyView()
 gdb_threads_view = GDBThreadsView()
 gdb_breakpoint_view = GDBBreakpointView()
 gdb_views = [gdb_session_view, gdb_console_view, gdb_variables_view, gdb_callstack_view, gdb_register_view, gdb_disassembly_view, gdb_threads_view, gdb_breakpoint_view]
-
 
 def update_view_markers(view=None):
     if view == None:
@@ -1310,7 +1358,7 @@ def gdboutput(pipe):
             line = pipe.readline().strip().decode(sys.getdefaultencoding())
 
             if len(line) > 0:
-                log_debug(line)
+                log_debug("gdb_%s: %s\n" % ("stdout" if pipe == gdb_process.stdout else "stderr", line))
                 gdb_session_view.add_line("%s\n" % line, False)
 
                 run_status = run_status_regex.match(line)
@@ -1336,6 +1384,7 @@ def gdboutput(pipe):
         except:
             traceback.print_exc()
     if pipe == gdb_process.stdout:
+        log_debug("GDB session ended\n")
         gdb_session_view.add_line("GDB session ended\n")
         sublime.set_timeout(session_ended_status_message, 0)
         gdb_stack_frame = None
@@ -1359,18 +1408,68 @@ def cleanup():
         gdb_bkp_window.set_layout(gdb_bkp_layout)
         gdb_bkp_window.focus_view(gdb_bkp_view)
     if __debug_file_handle != None:
-        __debug_file_handle.close()
-        __debug_file_handle = None
+        if __debug_file_handle != sys.stdout:
+            __debug_file_handle.close()
+            __debug_file_handle = None
 
 
-def programoutput(pipe):
+def programio(pty, tty):
     global gdb_process
     exception_count = 0
+    class MyFD(object):
+        def __init__(self, pty, tty):
+            self.pty = pty
+            self.tty = tty
+            self.off = 0
+            self.queue = Queue.Queue()
+
+        def on_done(self, s):
+            log_debug("programinput: %s\n" % s)
+            log_debug("Wrote: %d bytes\n" % os.write(self.pty, bencode("%s\n" % s)))
+            os.fsync(self.pty)
+            self.queue.put(None)
+
+        def get_input(self):
+            sublime.active_window().show_input_panel("stdin input expected: ", "input", self.on_done, None, lambda: self.queue.put(None))
+
+        def readline(self):
+            ret = ""
+            while gdb_process.poll() == None:
+                if not os.isatty(self.pty):
+                    s = os.fstat(self.pty)
+                    if self.off >= s.st_size and len(ret) == 0:
+                        return ret
+                else:
+                    import select
+                    r, w, x = select.select([self.pty], [self.pty], [], 5.0)
+                    if len(r) == 0 and len(w) != 0:
+                        log_debug("Ready for input\n")
+                        sublime.set_timeout(self.get_input, 0)
+                        self.queue.get()
+                        continue
+                    elif len(r) == 0:
+                        log_debug("timed out\n")
+                        break
+                read = os.read(self.pty, 1)
+                self.off += len(read)
+                ret += bdecode(read)
+                if len(read) == 0 or ret.endswith("\n"):
+                    break
+            return ret
+
+        def close(self):
+            os.close(self.pty)
+            if self.tty:
+                os.close(self.tty)
+
+    pipe = MyFD(pty, tty)
+
     while exception_count < 100:
         try:
             proc = gdb_process.poll() != None
             line = pipe.readline()
             if len(line) > 0:
+                log_debug("programoutput: %s" % line)
                 gdb_console_view.add_line(line, False)
             else:
                 if proc:
@@ -1457,7 +1556,9 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         global DEBUG_FILE
         view = self.window.active_view()
         DEBUG = get_setting("debug", False, view)
-        DEBUG_FILE = get_setting("debug_file", "/tmp/sublimegdb.txt", view)
+        DEBUG_FILE = expand_path(get_setting("debug_file", "stdout", view), self.window)
+        if DEBUG:
+            print("Will write debug info to file: %s" % DEBUG_FILE)
         if gdb_process == None or gdb_process.poll() != None:
             commandline = get_setting("commandline", view=view)
             if isinstance(commandline, list):
@@ -1465,11 +1566,12 @@ class GdbLaunch(sublime_plugin.WindowCommand):
                 commandline = " ".join(commandline)
             commandline = expand_path(commandline, self.window)
             path = expand_path(get_setting("workingdir", "/tmp", view), self.window)
-            print("Running: %s" % commandline)
-            print("In directory: %s" % path)
+            log_debug("Running: %s\n" % commandline)
+            log_debug("In directory: %s\n" % path)
             gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
+            log_debug("Process: %s\n" % gdb_process)
             gdb_bkp_window = sublime.active_window()
             #back up current layout before opening the debug one
             #it will be restored when debug is finished
@@ -1494,8 +1596,15 @@ class GdbLaunch(sublime_plugin.WindowCommand):
 
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
-            pipe, name = tempfile.mkstemp()
-            t = threading.Thread(target=programoutput, args=(os.fdopen(pipe),))
+            try:
+                raise Exception("Nope")
+                pty, tty = os.openpty()
+                name = os.ttyname(tty)
+            except:
+                pipe, name = tempfile.mkstemp()
+                pty, tty = pipe, None
+            log_debug("pty: %s, tty: %s, name: %s" % (pty, tty, name))
+            t = threading.Thread(target=programio, args=(pty,tty))
             t.start()
             try:
                 run_cmd("-gdb-show interpreter", True, timeout=20)
@@ -1505,7 +1614,7 @@ It seems you're not running gdb with the "mi" interpreter. Please add
 "--interpreter=mi" to your gdb command line""")
                 gdb_process.stdin.write("quit\n")
                 return
-            run_cmd("-inferior-tty-set %s" % name)
+            run_cmd("-inferior-tty-set %s" % name, True)
 
             run_cmd("-gdb-set target-async 1")
             run_cmd("-gdb-set pagination off")
@@ -1514,7 +1623,8 @@ It seems you're not running gdb with the "mi" interpreter. Please add
 
             gdb_breakpoint_view.sync_breakpoints()
             gdb_run_status = "running"
-            run_cmd(get_setting("exec_cmd"), True)
+
+            run_cmd(get_setting("exec_cmd", "-exec-run"), True)
 
             show_input()
         else:
@@ -1637,7 +1747,13 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
             var = gdb_variables_view.get_variable_at_line(self.view.rowcol(self.view.sel()[0].begin())[0])
             if var != None:
                 gdb_breakpoint_view.toggle_watch(var.get_expression())
-        else:
+        elif gdb_disassembly_view.is_open() and self.view.id() == gdb_disassembly_view.get_view().id():
+           for sel in self.view.sel():
+                line = self.view.substr(self.view.line(sel))
+                addr = re.match(r"^[^:]+", line)
+                if addr:
+                   gdb_breakpoint_view.toggle_breakpoint_addr(addr.group(0))
+        elif fn != None:
             for sel in self.view.sel():
                 line, col = self.view.rowcol(sel.a)
                 gdb_breakpoint_view.toggle_breakpoint(fn, line + 1)
@@ -1854,3 +1970,4 @@ class GdbOpenThreadsView(sublime_plugin.WindowCommand):
 
     def is_visible(self):
         return not gdb_threads_view.is_open()
+
