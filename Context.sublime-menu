@@ -1,51 +1,55 @@
-[
-    { "caption": "-", "id": "breakpoints" },
-    { "command": "gdb_toggle_breakpoint", "caption": "Toggle Breakpoint" },
-    { "command": "gdb_launch", "caption": "Run"},
-    { "command": "gdb_continue", "caption": "Continue" },
-    { "command": "gdb_step_over", "caption": "Step Over" },
-    { "command": "gdb_step_into", "caption": "Step Into" },
-    { "command": "gdb_step_out", "caption": "Step Out" },
-    {
-        "caption": "SublimeGDB: Step Next Instruction",
-        "command": "gdb_next_instruction"
-    },
-    { "command": "gdb_exit", "caption": "Stop Debugging"},
-    { "caption": "-", "id": "gdb_views" },
-    {
-        "caption": "Open Breakpoint View",
-        "command": "gdb_open_breakpoint_view"
-    },
-    {
-        "caption": "Open Callstack View",
-        "command": "gdb_open_callstack_view"
-    },
-    {
-        "caption": "Open Console View",
-        "command": "gdb_open_console_view"
-    },
-    {
-        "caption": "Open Disassembly View",
-        "command": "gdb_open_disassembly_view"
-    },
-    {
-        "caption": "Open Register View",
-        "command": "gdb_open_register_view"
-    },
-    {
-        "caption": "Open Session View",
-        "command": "gdb_open_session_view"
-    },
-    {
-        "caption": "Open Threads View",
-        "command": "gdb_open_threads_view"
-    },
-    {
-        "caption": "Open Variables View",
-        "command": "gdb_open_variables_view"
-    },
-    {
-        "caption": "Add watch",
-        "command": "gdb_add_watch"
-    }
-]
+[{
+    "id": "gdb_menu",
+    "caption": "GDB",
+    "children": [
+        { "caption": "-", "id": "breakpoints" },
+        { "command": "gdb_toggle_breakpoint", "caption": "Toggle Breakpoint" },
+        { "command": "gdb_launch", "caption": "Run"},
+        { "command": "gdb_continue", "caption": "Continue" },
+        { "command": "gdb_step_over", "caption": "Step Over" },
+        { "command": "gdb_step_into", "caption": "Step Into" },
+        { "command": "gdb_step_out", "caption": "Step Out" },
+        {
+            "caption": "SublimeGDB: Step Next Instruction",
+            "command": "gdb_next_instruction"
+        },
+        { "command": "gdb_exit", "caption": "Stop Debugging"},
+        { "caption": "-", "id": "gdb_views" },
+        {
+            "caption": "Open Breakpoint View",
+            "command": "gdb_open_breakpoint_view"
+        },
+        {
+            "caption": "Open Callstack View",
+            "command": "gdb_open_callstack_view"
+        },
+        {
+            "caption": "Open Console View",
+            "command": "gdb_open_console_view"
+        },
+        {
+            "caption": "Open Disassembly View",
+            "command": "gdb_open_disassembly_view"
+        },
+        {
+            "caption": "Open Register View",
+            "command": "gdb_open_register_view"
+        },
+        {
+            "caption": "Open Session View",
+            "command": "gdb_open_session_view"
+        },
+        {
+            "caption": "Open Threads View",
+            "command": "gdb_open_threads_view"
+        },
+        {
+            "caption": "Open Variables View",
+            "command": "gdb_open_variables_view"
+        },
+        {
+            "caption": "Add watch",
+            "command": "gdb_add_watch"
+        }
+    ]
+}]
