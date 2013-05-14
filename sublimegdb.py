@@ -63,7 +63,7 @@ except:
 
 def get_setting(key, default=None, view=None):
     try:
-        if view == None:
+        if view is None:
             view = sublime.active_window().active_view()
         s = view.settings()
         if s.has("sublimegdb_%s" % key):
@@ -74,7 +74,7 @@ def get_setting(key, default=None, view=None):
 
 
 def expand_path(value, window):
-    if window == None:
+    if window is None:
         # Views can apparently be window less, in most instances getting
         # the active_window will be the right choice (for example when
         # previewing a file), but the one instance this is incorrect
@@ -146,7 +146,7 @@ def log_debug(line):
     global DEBUG
     if DEBUG:
         try:
-            if __debug_file_handle == None:
+            if __debug_file_handle is None:
                 if DEBUG_FILE == "stdout":
                     __debug_file_handle = sys.stdout
                 else:
@@ -173,19 +173,19 @@ class GDBView(object):
         return not self.closed
 
     def open_at_start(self):
-        if self.settingsprefix != None:
+        if self.settingsprefix is not None:
             return get_setting("%s_open" % self.settingsprefix, False)
         return False
 
     def open(self):
-        if self.view == None or self.view.window() == None:
-            if self.settingsprefix != None:
+        if self.view is None or self.view.window() is not None:
+            if self.settingsprefix is not None:
                 sublime.active_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0))
             self.create_view()
 
     def close(self):
-        if self.view != None:
-            if self.settingsprefix != None:
+        if self.view is not None:
+            if self.settingsprefix is not None:
                 sublime.active_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0))
             self.destroy_view()
 
@@ -358,7 +358,7 @@ class GDBVariable:
     def get_expression(self):
         expression = ""
         parent = self.parent
-        while parent != None:
+        while parent is not None:
             ispointer = "typecode" in parent and parent["typecode"] == "PTR"
             expression = "%s%s%s" % (parent["exp"], "->" if ispointer else ".", expression)
             parent = parent.parent
@@ -398,7 +398,7 @@ class GDBVariable:
         elif name.startswith(self.get_name()):
             for child in self.children:
                 ret = child.find(name)
-                if ret != None:
+                if ret is not None:
                     return ret
         return None
 
@@ -558,7 +558,7 @@ class GDBRegisterView(GDBView):
         if not self.should_update():
             return
         dirtylist = []
-        if self.values == None:
+        if self.values is None:
             names = self.get_names()
             vals = self.get_values()
             self.values = []
@@ -598,7 +598,7 @@ class GDBRegisterView(GDBView):
                         sublime.DRAW_OUTLINED)
 
     def get_register_at_line(self, line):
-        if self.values == None:
+        if self.values is None:
             return None
         for i in range(len(self.values)):
             if self.values[i].line == line:
@@ -674,7 +674,7 @@ class GDBVariablesView(GDBView):
                 name = value["name"]
                 for var in self.variables:
                     real = var.find(name)
-                    if real != None:
+                    if real is not None:
                         if  "in_scope" in value and value["in_scope"] == "false":
                             real.delete()
                             dellist.append(real)
@@ -714,7 +714,7 @@ class GDBVariablesView(GDBView):
         self.update_view()
 
     def get_variable_at_line(self, line, var_list=None):
-        if var_list == None:
+        if var_list is None:
             var_list = self.variables
         if len(var_list) == 0:
             return None
@@ -1111,7 +1111,7 @@ class GDBBreakpointView(GDBView):
     def update_marker(self, view):
         bps = []
         fn = view.file_name()
-        if fn == None:
+        if fn is None:
             return
         fn = normalize(fn)
         for bkpt in self.breakpoints:
@@ -1206,11 +1206,11 @@ gdb_breakpoint_view = GDBBreakpointView()
 gdb_views = [gdb_session_view, gdb_console_view, gdb_variables_view, gdb_callstack_view, gdb_register_view, gdb_disassembly_view, gdb_threads_view, gdb_breakpoint_view]
 
 def update_view_markers(view=None):
-    if view == None:
+    if view is None:
         view = sublime.active_window().active_view()
 
     fn = view.file_name()
-    if not fn is None:
+    if fn is not None:
         fn = normalize(fn)
     pos_scope = get_setting("position_scope", "entity.name.class")
     pos_icon = get_setting("position_icon", "bookmark")
@@ -1219,7 +1219,7 @@ def update_view_markers(view=None):
     if fn == gdb_cursor and gdb_cursor_position != 0:
         cursor.append(view.full_line(view.text_point(gdb_cursor_position - 1, 0)))
     global gdb_last_cursor_view
-    if not gdb_last_cursor_view is None:
+    if gdb_last_cursor_view is not None:
         gdb_last_cursor_view.erase_regions("sublimegdb.position")
     gdb_last_cursor_view = view
     view.add_regions("sublimegdb.position", cursor, pos_scope, pos_icon, sublime.HIDDEN)
@@ -1250,7 +1250,7 @@ def run_cmd(cmd, block=False, mimode=True, timeout=10):
     else:
         cmd = "%s\n\n" % cmd
     log_debug(cmd)
-    if gdb_session_view != None:
+    if gdb_session_view is not None:
         gdb_session_view.add_line(cmd, False)
     gdb_process.stdin.write(cmd.encode(sys.getdefaultencoding()))
     if block:
@@ -1318,7 +1318,7 @@ def update_cursor():
     else:
         gdb_cursor_position = 0
 
-    sameFrame = gdb_stack_frame != None and \
+    sameFrame = gdb_stack_frame is not None and \
                 gdb_stack_frame["func"] == currFrame["func"]
     if sameFrame and "shlibname" in currFrame and "shlibname" in gdb_stack_frame:
         sameFrame = currFrame["shlibname"] == gdb_stack_frame["shlibname"]
@@ -1353,33 +1353,32 @@ def gdboutput(pipe):
 
     while True:
         try:
-            if gdb_process.poll() != None:
+            line = pipe.readline()
+            if len(line) == 0:
                 break
-            line = pipe.readline().strip().decode(sys.getdefaultencoding())
+            line = line.strip().decode(sys.getdefaultencoding())
+            log_debug("gdb_%s: %s\n" % ("stdout" if pipe == gdb_process.stdout else "stderr", line))
+            gdb_session_view.add_line("%s\n" % line, False)
 
-            if len(line) > 0:
-                log_debug("gdb_%s: %s\n" % ("stdout" if pipe == gdb_process.stdout else "stderr", line))
-                gdb_session_view.add_line("%s\n" % line, False)
+            run_status = run_status_regex.match(line)
+            if run_status is not None:
+                gdb_run_status = run_status.group(2)
+                reason = re.search("(?<=reason=\")[a-zA-Z0-9\-]+(?=\")", line)
+                if reason is not None and reason.group(0).startswith("exited"):
+                    run_cmd("-gdb-exit")
+                elif not "running" in gdb_run_status and not gdb_shutting_down:
+                    thread_id = re.search('thread-id="(\d+)"', line)
+                    if thread_id is not None:
+                        gdb_threads_view.select_thread(int(thread_id.group(1)))
+                    sublime.set_timeout(update_cursor, 0)
+            if not line.startswith("(gdb)"):
+                gdb_lastline = line
+            if command_result_regex.match(line) is not None:
+                gdb_lastresult = line
 
-                run_status = run_status_regex.match(line)
-                if run_status != None:
-                    gdb_run_status = run_status.group(2)
-                    reason = re.search("(?<=reason=\")[a-zA-Z0-9\-]+(?=\")", line)
-                    if reason != None and reason.group(0).startswith("exited"):
-                        run_cmd("-gdb-exit")
-                    elif not "running" in gdb_run_status and not gdb_shutting_down:
-                        thread_id = re.search('thread-id="(\d+)"', line)
-                        if thread_id != None:
-                            gdb_threads_view.select_thread(int(thread_id.group(1)))
-                        sublime.set_timeout(update_cursor, 0)
-                if not line.startswith("(gdb)"):
-                    gdb_lastline = line
-                if command_result_regex.match(line) != None:
-                    gdb_lastresult = line
-
-                if line.startswith("~"):
-                    gdb_console_view.add_line(
-                        line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t"), False)
+            if line.startswith("~"):
+                gdb_console_view.add_line(
+                    line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t"), False)
 
         except:
             traceback.print_exc()
@@ -1398,7 +1397,6 @@ def gdboutput(pipe):
         sublime.set_timeout(view.on_session_ended, 0)
     sublime.set_timeout(cleanup, 0)
 
-
 def cleanup():
     global __debug_file_handle
     if get_setting("close_views", True):
@@ -1407,7 +1405,7 @@ def cleanup():
     if get_setting("push_pop_layout", True):
         gdb_bkp_window.set_layout(gdb_bkp_layout)
         gdb_bkp_window.focus_view(gdb_bkp_view)
-    if __debug_file_handle != None:
+    if __debug_file_handle is not None:
         if __debug_file_handle != sys.stdout:
             __debug_file_handle.close()
             __debug_file_handle = None
@@ -1434,7 +1432,7 @@ def programio(pty, tty):
 
         def readline(self):
             ret = ""
-            while gdb_process.poll() == None:
+            while True:
                 if not os.isatty(self.pty):
                     s = os.fstat(self.pty)
                     if self.off >= s.st_size and len(ret) == 0:
@@ -1466,19 +1464,19 @@ def programio(pty, tty):
 
     while exception_count < 100:
         try:
-            proc = gdb_process.poll() != None
+            #proc = gdb_process.poll() != None
             line = pipe.readline()
             if len(line) > 0:
                 log_debug("programoutput: %s" % line)
                 gdb_console_view.add_line(line, False)
             else:
-                if proc:
+                if gdb_process.poll() is not None:
                     break
                 time.sleep(0.1)
         except:
             traceback.print_exc()
             exception_count = exception_count + 1
-    if not pipe == None:
+    if pipe is not None:
         pipe.close()
 
 
@@ -1536,7 +1534,7 @@ def input_on_change(s):
 
 
 def is_running():
-    return gdb_process != None and gdb_process.poll() == None
+    return gdb_process is not None and gdb_process.poll() is None
 
 
 class GdbInput(sublime_plugin.WindowCommand):
@@ -1559,7 +1557,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         DEBUG_FILE = expand_path(get_setting("debug_file", "stdout", view), self.window)
         if DEBUG:
             print("Will write debug info to file: %s" % DEBUG_FILE)
-        if gdb_process == None or gdb_process.poll() != None:
+        if gdb_process is None or gdb_process.poll() is not None:
             commandline = get_setting("commandline", view=view)
             if isinstance(commandline, list):
                 # backwards compatibility for when the commandline was a list
@@ -1724,7 +1722,7 @@ class GdbAddWatch(sublime_plugin.TextCommand):
     def run(self, edit):
         if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
             var = gdb_variables_view.get_variable_at_line(self.view.rowcol(self.view.sel()[0].begin())[0])
-            if var != None:
+            if var is not None:
                 gdb_breakpoint_view.toggle_watch(var.get_expression())
             else:
                 sublime.status_message("Don't know how to watch that variable")
@@ -1745,7 +1743,7 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
                 gdb_breakpoint_view.update_view()
         elif gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
             var = gdb_variables_view.get_variable_at_line(self.view.rowcol(self.view.sel()[0].begin())[0])
-            if var != None:
+            if var is not None:
                 gdb_breakpoint_view.toggle_watch(var.get_expression())
         elif gdb_disassembly_view.is_open() and self.view.id() == gdb_disassembly_view.get_view().id():
            for sel in self.view.sel():
@@ -1753,7 +1751,7 @@ class GdbToggleBreakpoint(sublime_plugin.TextCommand):
                 addr = re.match(r"^[^:]+", line)
                 if addr:
                    gdb_breakpoint_view.toggle_breakpoint_addr(addr.group(0))
-        elif fn != None:
+        elif fn is not None:
             for sel in self.view.sel():
                 line, col = self.view.rowcol(sel.a)
                 gdb_breakpoint_view.toggle_breakpoint(fn, line + 1)
@@ -1854,7 +1852,7 @@ class GdbEventListener(sublime_plugin.EventListener):
         if key == "gdb_running":
             return is_running() == operand
         elif key == "gdb_input_view":
-            return gdb_input_view != None and view.id() == gdb_input_view.id()
+            return gdb_input_view is not None and view.id() == gdb_input_view.id()
         elif key.startswith("gdb_"):
             v = gdb_variables_view
             if key.startswith("gdb_register_view"):
@@ -1864,17 +1862,17 @@ class GdbEventListener(sublime_plugin.EventListener):
             if key.endswith("open"):
                 return v.is_open() == operand
             else:
-                if v.get_view() == None:
+                if v.get_view() is None:
                     return False == operand
                 return (view.id() == v.get_view().id()) == operand
         return None
 
     def on_activated(self, view):
-        if view.file_name() != None:
+        if view.file_name() is not None:
             update_view_markers(view)
 
     def on_load(self, view):
-        if view.file_name() != None:
+        if view.file_name() is not None:
             update_view_markers(view)
 
     def on_close(self, view):
