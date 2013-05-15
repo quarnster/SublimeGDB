@@ -178,7 +178,7 @@ class GDBView(object):
         return False
 
     def open(self):
-        if self.view is None or self.view.window() is not None:
+        if self.view is None or self.view.window() is None:
             if self.settingsprefix is not None:
                 sublime.active_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0))
             self.create_view()
@@ -1464,7 +1464,6 @@ def programio(pty, tty):
 
     while exception_count < 100:
         try:
-            #proc = gdb_process.poll() != None
             line = pipe.readline()
             if len(line) > 0:
                 log_debug("programoutput: %s" % line)
