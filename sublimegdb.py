@@ -1037,17 +1037,20 @@ class GDBBreakpoint(object):
     def insert(self):
         # TODO: does removing the unicode-escape break things? what's the proper way to handle this in python3?
         # cmd = "-break-insert \"\\\"%s\\\":%d\"" % (self.original_filename.encode("unicode-escape"), self.original_line)
+        break_cmd = "-break-insert"
+        if get_setting("debug_ext") == True:
+            break_cmd += " -f"
         if self.addr != "":
-            cmd = "-break-insert *%s" % self.addr
+            cmd = "%s *%s" % (break_cmd, self.addr)
         else:
-            cmd = "-break-insert \"\\\"%s\\\":%d\"" % (self.original_filename, self.original_line)
+            cmd = "%s \"\\\"%s\\\":%d\"" % (break_cmd, self.original_filename, self.original_line)
         out = run_cmd(cmd, True)
         if get_result(out) == "error":
             return
         res = parse_result_line(out)
         if "bkpt" not in res and "matches" in res:
             for match in res["matches"]["b"]:
-                cmd = "-break-insert *%s" % match["addr"]
+                cmd = "%s *%s" % (break_cmd, match["addr"])
                 out = run_cmd(cmd, True)
                 if get_result(out) == "error":
                     return
