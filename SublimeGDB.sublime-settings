@@ -87,6 +87,10 @@
     // Setting it to "stdout" will write the output to the python console
     "debug_file": "stdout",
 
+    // Add "pending breakpoints" for symbols that are dynamically loaded from
+    // external shared libraries
+    "debug_ext" : false,
+
     // Whether to log the raw data read from and written to the gdb session and the inferior program.
     "debug": false
 }
