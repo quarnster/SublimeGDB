@@ -32,6 +32,11 @@
     // probably want to change this to -exec-continue
     "exec_cmd": "-exec-run",
 
+    // For the larger binaries with lot of shared libraries
+    // the loading within the gdb could take much longer.
+    // Configure the thead wait timeout by setting gdb_timeout
+    "gdb_timeout": 20,
+
     "layout":
     {
         "cols": [0.0, 0.33, 0.66, 1.0],
