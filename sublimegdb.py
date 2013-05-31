@@ -1607,7 +1607,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
             t = threading.Thread(target=programio, args=(pty,tty))
             t.start()
             try:
-                run_cmd("-gdb-show interpreter", True, timeout=20)
+                run_cmd("-gdb-show interpreter", True, timeout=get_setting("gdb_timeout", 20))
             except:
                 sublime.error_message("""\
 It seems you're not running gdb with the "mi" interpreter. Please add
