@@ -34,7 +34,7 @@
 
     // For the larger binaries with lot of shared libraries
     // the loading within the gdb could take much longer.
-    // Configure the thead wait timeout by setting gdb_timeout
+    // Configure the thread wait timeout by setting gdb_timeout
     "gdb_timeout": 20,
 
     "layout":
