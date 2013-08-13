@@ -1043,7 +1043,7 @@ class GDBBreakpoint(object):
         if self.addr != "":
             cmd = "%s *%s" % (break_cmd, self.addr)
         else:
-            cmd = "%s \"\\\"%s\\\":%d\"" % (break_cmd, self.original_filename, self.original_line)
+            cmd = "%s \"\\\"%s\\\":%d\"" % (break_cmd, self.original_filename.replace("\\", "/"), self.original_line)
         out = run_cmd(cmd, True)
         if get_result(out) == "error":
             return
