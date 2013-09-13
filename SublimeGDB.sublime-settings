@@ -73,6 +73,9 @@
 
     "disassembly_group": 2,
     "disassembly_open": false,
+    // Set to "intel" for intel disassembly flavor. All other
+    // values default to using "att" flavor.
+    "disassembly_flavor": "intel",
 
     "threads_group": 3,
     "threads_open": true,
