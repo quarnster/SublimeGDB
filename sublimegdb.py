@@ -1618,6 +1618,11 @@ It seems you're not running gdb with the "mi" interpreter. Please add
 
             run_cmd("-gdb-set target-async 1")
             run_cmd("-gdb-set pagination off")
+            dis_asm_flavor = get_setting("disassembly_flavor", "att", view)
+            if dis_asm_flavor == "intel":
+                run_cmd("-gdb-set disassembly-flavor intel")
+            else:
+                run_cmd("-gdb-set disassembly-flavor att")
             # if gdb_nonstop:
             #     run_cmd("-gdb-set non-stop on")
 
