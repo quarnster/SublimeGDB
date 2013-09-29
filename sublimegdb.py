@@ -129,7 +129,6 @@ gdb_nonstop = False
 if os.name == 'nt':
     gdb_nonstop = False
 
-
 gdb_run_status = None
 result_regex = re.compile("(?<=\^)[^,\"]*")
 collapse_regex = re.compile("{.*}", re.DOTALL)
@@ -1290,7 +1289,10 @@ def resume():
 
 
 def get_result(line):
-    return result_regex.search(line).group(0)
+    res = result_regex.search(line).group(0)
+    if res == "error" and not get_setting("i_know_how_to_use_gdb_thank_you_very_much", False):
+        sublime.error_message("%s\n\n%s" % (line, "\n".join(traceback.format_stack())))
+    return res
 
 
 def listify(var):
@@ -1568,6 +1570,22 @@ class GdbLaunch(sublime_plugin.WindowCommand):
             path = expand_path(get_setting("workingdir", "/tmp", view), self.window)
             log_debug("Running: %s\n" % commandline)
             log_debug("In directory: %s\n" % path)
+            if commandline == "notset" or path == "notset":
+                sublime.error_message("You have not configured the plugin correctly, the default configuration file and your user configuration file will open in a new window")
+                sublime.run_command("new_window")
+                wnd = sublime.active_window()
+                wnd.set_layout({
+                    "cols": [0.0, 0.5, 1.0],
+                    "rows": [0, 1.0],
+                    "cells": [[0,0,1,1], [1,0,2,1]],
+                })
+                v = wnd.open_file("%s/User/SublimeGDB.sublime-settings" % sublime.packages_path())
+                v2 = wnd.open_file("%s/SublimeGDB/SublimeGDB.sublime-settings" % sublime.packages_path())
+                wnd.set_view_index(v2, 1, 0)
+                return
+            if not os.path.exists(path):
+                sublime.error_message("The directory given does not exist: %s" % path)
+                return
             gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 

@@ -22,10 +22,12 @@
     //
     // ${folder:} is replaced with the dirname of the given path.
     // Example: ${folder:/path/to/file} is replaced with "/path/to".
-    "workingdir": "/tmp",
+    // "workingdir": "/tmp",
+    "workingdir": "notset",
 
     // NOTE: You MUST provide --interpreter=mi for the plugin to work
-    "commandline": "gdb --interpreter=mi ./executable",
+    // "commandline": "gdb --interpreter=mi ./executable",
+    "commandline": "notset",
 
     // The command to use to run the program.
     // If you are attaching to a remote program, you
@@ -100,5 +102,8 @@
     "debug_ext" : false,
 
     // Whether to log the raw data read from and written to the gdb session and the inferior program.
-    "debug": false
+    "debug": true,
+
+    // Disables showing the error message dialog when something goes wrong
+    "i_know_how_to_use_gdb_thank_you_very_much": false
 }
