@@ -505,6 +505,13 @@ class GDBRegister:
                 if len(floats) == 4:
                     floats = [str(itof(int(f, 16))) for f in floats]
                     val = match.expand(r"\g<1>%s\g<3>" % ", ".join(floats))
+            match = re.search(r"(.*v2_double\s*=\s*\{)([^}]+)(\}.*v2_int64\s*=\s*\{([^\}]+)\}.*)", val)
+            if match:
+                doubles = re.findall(r"0x[^,\}]+", match.group(4))
+                if len(doubles) == 2:
+                    doubles = [str(qtod(int(f, 16))) for f in doubles]
+                    val = match.expand(r"\g<1>%s\g<3>" % ", ".join(doubles))
+
         output = "%8s: %s\n" % (self.name, val)
         self.line = line
         line += output.count("\n")
