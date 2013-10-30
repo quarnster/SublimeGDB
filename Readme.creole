@@ -18,15 +18,15 @@ GDB itself supports the following languages:
 
 The SublimeGDB plugin frontend supports the following languages:
 (D language is tested and working but for the rest languages someone should confirm)
-* C and C++:
-* D: working
-* Go:
-* Objective-C:
-* OpenCL C:
-* Fortran:
-* Pascal:
-* Modula-2:
-* Ada:
+* C and C++ :
+* D : working
+* Go :
+* Objective-C :
+* OpenCL C :
+* Fortran :
+* Pascal :
+* Modula-2 :
+* Ada :
 
 === Installation ===
     # The easiest way to install SublimeGDB is via the excellent Package Control Plugin
