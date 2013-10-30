@@ -19,7 +19,7 @@ GDB itself supports the following languages:
 The SublimeGDB plugin frontend supports the following languages:
 (D language is tested and working but for the rest languages someone should confirm)
 * C and C++ :
-* D : working
+* D : screenshot [[https://github.com/stef-k/SublimeGDB/wiki/D-language-debugging-session-screenshot|Sublime debbug session]]
 * Go :
 * Objective-C :
 * OpenCL C :
