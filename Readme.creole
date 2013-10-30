@@ -3,6 +3,31 @@ GDB plugin for Sublime Text 2. Pull requests are more than welcome.
 
 This is still quite early so if you have any [[https://github.com/quarnster/SublimeGDB/issues?sort=created&direction=desc&state=open|issues or feature requests]], please let me know.
 
+=== Supported Languages ===
+
+GDB itself supports the following languages:
+* C and C++
+* D
+* Go
+* Objective-C
+* OpenCL C
+* Fortran
+* Pascal
+* Modula-2
+* Ada
+
+The SublimeGDB plugin frontend supports the following languages:
+(not D is tested and working but for the rest languages someone should confirm)
+* C and C++
+* D
+* Go
+* Objective-C
+* OpenCL C
+* Fortran
+* Pascal
+* Modula-2
+* Ada
+
 === Installation ===
     # The easiest way to install SublimeGDB is via the excellent Package Control Plugin
     ## See http://wbond.net/sublime_packages/package_control/installation
