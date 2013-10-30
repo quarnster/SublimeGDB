@@ -1552,6 +1552,22 @@ class GdbInput(sublime_plugin.WindowCommand):
     def run(self):
         show_input()
 
+def is_dlang(view):
+    """Checks if the current language is set to D"""
+
+    # or the current file extension is known
+    # to be related to D language in order to
+    # create the debug symbols first
+    import os
+
+    filename, file_type = os.path.splitext(view.file_name())
+    file_types = [".d", ".di"]
+    if ("D.tmLanguage" in view.settings().get("syntax") or
+        file_type in file_types):
+
+        return True
+    else:
+        return False
 
 class GdbLaunch(sublime_plugin.WindowCommand):
     def run(self):
@@ -1569,32 +1585,86 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         if DEBUG:
             print("Will write debug info to file: %s" % DEBUG_FILE)
         if gdb_process is None or gdb_process.poll() is not None:
-            commandline = get_setting("commandline", view=view)
-            if isinstance(commandline, list):
-                # backwards compatibility for when the commandline was a list
-                commandline = " ".join(commandline)
-            commandline = expand_path(commandline, self.window)
-            path = expand_path(get_setting("workingdir", "/tmp", view), self.window)
-            log_debug("Running: %s\n" % commandline)
-            log_debug("In directory: %s\n" % path)
-            if commandline == "notset" or path == "notset":
-                sublime.error_message("You have not configured the plugin correctly, the default configuration file and your user configuration file will open in a new window")
-                sublime.run_command("new_window")
-                wnd = sublime.active_window()
-                wnd.set_layout({
-                    "cols": [0.0, 0.5, 1.0],
-                    "rows": [0, 1.0],
-                    "cells": [[0,0,1,1], [1,0,2,1]],
-                })
-                v = wnd.open_file("%s/User/SublimeGDB.sublime-settings" % sublime.packages_path())
-                v2 = wnd.open_file("%s/SublimeGDB/SublimeGDB.sublime-settings" % sublime.packages_path())
-                wnd.set_view_index(v2, 1, 0)
-                return
-            if not os.path.exists(path):
-                sublime.error_message("The directory given does not exist: %s" % path)
-                return
-            gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
-                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            # D lang patch in
+            # create a branch dedicated to D language
+            if is_dlang(view):
+                import os
+                # as in settings
+                target_file = get_setting("target_file")
+                # as in settings
+                workingdir = get_setting("workingdir")
+                filename, file_type = os.path.splitext(view.file_name())
+                basename = os.path.basename(filename)
+                current_dir = os.path.dirname(
+                    os.path.abspath(filename + file_type))
+
+
+                # do not bother the user with error messages
+                # assume the current file as debug target
+                if (target_file == "notset" or target_file == "" or
+                    not target_file):
+                    target_file = filename + file_type
+
+
+                # as above assume the working directory from
+                # the active file
+                if workingdir == "notset" or workingdir == "" or not workingdir:
+                    workingdir = current_dir
+
+                # generate the debug symbols
+                cmd = "dmd -g " + filename+file_type
+                process = subprocess.Popen(cmd, shell=True, cwd=workingdir,
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+
+                # wait for the process to terminate
+                out, err = process.communicate()
+                errcode = process.returncode
+                log_debug("Process: %s\n%s\n%s" % (out, err, errcode))
+
+                # go on with GDB
+                commandline = get_setting("commandline")
+
+                # set some default behaviour if not set
+                if not commandline or commandline == "":
+                    commandline = "gdb --interpreter=mi"
+
+                cmd = commandline + " " + workingdir + os.path.sep + "./" + basename
+                gdb_process = subprocess.Popen(cmd, shell=True, cwd=workingdir,
+                            stdin=subprocess.PIPE,
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+
+                log_debug("Process: %s\n" % gdb_process)
+
+            # If not D language go on with the original implementation
+            else:
+                commandline = get_setting("commandline", view=view)
+                if isinstance(commandline, list):
+                    # backwards compatibility for when the commandline was a list
+                    commandline = " ".join(commandline)
+                commandline = expand_path(commandline, self.window)
+                path = expand_path(get_setting("workingdir", "/tmp", view), self.window)
+                log_debug("Running: %s\n" % commandline)
+                log_debug("In directory: %s\n" % path)
+                if commandline == "notset" or path == "notset":
+                    sublime.error_message("You have not configured the plugin correctly, the default configuration file and your user configuration file will open in a new window")
+                    sublime.run_command("new_window")
+                    wnd = sublime.active_window()
+                    wnd.set_layout({
+                        "cols": [0.0, 0.5, 1.0],
+                        "rows": [0, 1.0],
+                        "cells": [[0,0,1,1], [1,0,2,1]],
+                    })
+                    v = wnd.open_file("%s/User/SublimeGDB.sublime-settings" % sublime.packages_path())
+                    v2 = wnd.open_file("%s/SublimeGDB/SublimeGDB.sublime-settings" % sublime.packages_path())
+                    wnd.set_view_index(v2, 1, 0)
+                    return
+                if not os.path.exists(path):
+                    sublime.error_message("The directory given does not exist: %s" % path)
+                    return
+                gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
+                                                stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
             log_debug("Process: %s\n" % gdb_process)
             gdb_bkp_window = sublime.active_window()
