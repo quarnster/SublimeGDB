@@ -10,7 +10,18 @@
     //      "sublimegdb_commandline": "gdb --interpreter=mi ./your_executable_name"
     //      ]
     // }
+    // --------------------------------------------------
+    // D Language notes:
+    //  The only thing needed to start debbuging D sources is to add in user
+    //  settings the following:
+    //  "sublimegdb_commandline": "gdb --interpreter=mi"
     //
+    //  The debbuger picks the active file, if you need to specify a specific
+    //  file then you can add in the user settings the following:
+    //  "target_file" : "notset"
+    //  if target_file set to 'noset' or left empty then the active file will be debugged
+    //  else the debugger will start on the specified file
+    //  --------------------------------------------------
     // ${home}, ${project_path:} and ${folder:} tokens can be used in the workingdir option.
     //
     // ${home} is replaced with the value of the HOME environment variable.
