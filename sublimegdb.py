@@ -1594,7 +1594,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
                 sublime.error_message("The directory given does not exist: %s" % path)
                 return
             gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
-                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             log_debug("Process: %s\n" % gdb_process)
             gdb_bkp_window = sublime.active_window()
@@ -1621,6 +1621,9 @@ class GdbLaunch(sublime_plugin.WindowCommand):
 
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
+            t = threading.Thread(target=gdboutput, args=(gdb_process.stderr,))
+            t.start()
+
             try:
                 raise Exception("Nope")
                 pty, tty = os.openpty()
