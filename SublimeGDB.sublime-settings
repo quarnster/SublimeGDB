@@ -105,5 +105,8 @@
     "debug": true,
 
     // Disables showing the error message dialog when something goes wrong
-    "i_know_how_to_use_gdb_thank_you_very_much": false
+    "i_know_how_to_use_gdb_thank_you_very_much": false,
+
+    //Terminate gdb on exit
+    "terminate_on_exit": false
 }
