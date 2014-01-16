@@ -1,7 +1,5 @@
 === Description ===
-GDB plugin for Sublime Text 2. Pull requests are more than welcome.
-
-This is still quite early so if you have any [[https://github.com/quarnster/SublimeGDB/issues?sort=created&direction=desc&state=open|issues or feature requests]], please let me know.
+GDB plugin for Sublime Text 2. Filing issues are not welcome (and thus disabled). Pull requests please.
 
 === Installation ===
     # The easiest way to install SublimeGDB is via the excellent Package Control Plugin
