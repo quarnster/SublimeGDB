@@ -39,12 +39,19 @@
     // Configure the thread wait timeout by setting gdb_timeout
     "gdb_timeout": 20,
 
+    // Define debbuging window layout (window split)
+    // first define column/row separators, then refer to them to define cells
     "layout":
     {
         "cols": [0.0, 0.33, 0.66, 1.0],
         "rows": [0.0, 0.75, 1.0],
-        "cells": [[0, 0, 3, 1],
-            [0, 1, 1, 2], [1, 1, 2, 2], [2, 1, 3, 2]]
+        "cells":
+        [ // c1 r1 c2 r2
+            [0, 0, 3, 1], // -> (0.00, 0.00), (1.00, 0.75)
+            [0, 1, 1, 2], // -> (0.00, 0.75), (0.33, 1.00)
+            [1, 1, 2, 2], // -> (0.33, 0.75), (0.66, 1.00)
+            [2, 1, 3, 2]  // -> (0.66, 0.75), (1.00, 1.00)
+        ]
     },
 
     // visual stuff
