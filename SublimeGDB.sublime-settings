@@ -39,7 +39,7 @@
     // Configure the thread wait timeout by setting gdb_timeout
     "gdb_timeout": 20,
 
-    // Define debbuging window layout (window split)
+    // Define debuging window layout (window split)
     // first define column/row separators, then refer to them to define cells
     "layout":
     {
