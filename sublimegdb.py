@@ -1262,6 +1262,7 @@ def run_cmd(cmd, block=False, mimode=True, timeout=10):
     if gdb_session_view is not None:
         gdb_session_view.add_line(cmd, False)
     gdb_process.stdin.write(cmd.encode(sys.getdefaultencoding()))
+    gdb_process.stdin.flush()
     if block:
         countstr = "%d^" % count
         i = 0
