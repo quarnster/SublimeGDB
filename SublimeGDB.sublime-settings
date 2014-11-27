@@ -8,7 +8,7 @@
     //      "sublimegdb_workingdir": "${folder:${project_path:your_executable_name}}",
     //      // NOTE: You MUST provide --interpreter=mi for the plugin to work
     //      "sublimegdb_commandline": "gdb --interpreter=mi ./your_executable_name"
-    //      ]
+    //
     // }
     //
     // ${home}, ${project_path:} and ${folder:} tokens can be used in the workingdir option.
