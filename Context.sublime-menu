@@ -5,6 +5,8 @@
         { "caption": "-", "id": "breakpoints" },
         { "command": "gdb_toggle_breakpoint", "caption": "Toggle Breakpoint" },
         { "command": "gdb_launch", "caption": "Run"},
+        { "command": "gdb_load", "caption": "Load"},
+        { "command": "gdb_pause", "caption": "Pause"},
         { "command": "gdb_continue", "caption": "Continue" },
         { "command": "gdb_step_over", "caption": "Step Over" },
         { "command": "gdb_step_into", "caption": "Step Into" },

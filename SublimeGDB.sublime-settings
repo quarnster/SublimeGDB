@@ -37,6 +37,7 @@
     // "commandline": "gdb --interpreter=mi ./executable",
     "commandline": "notset",
 
+
     // Arguments for the program.
     // Example: to run "./executable foo bar"
     // "arguments": "foo bar"
@@ -44,10 +45,33 @@
     // "arguments": "< input.dat"
     "arguments": "",
 
+    // GDB Server 
+    // Specify a command and working dir for launching a GDB Server
+    // This is useful for dealing with "remote" servers that are actually locally 
+    // connected JTAG boxes
+    "server_workingdir": "notset",
+    "server_commandline": "notset",
+
     // The command to use to run the program.
     // If you are attaching to a remote program, you
     // probably want to change this to -exec-continue
     "exec_cmd": "-exec-run",
+
+    // Load the image to the remote target
+    "load_cmd": "-target-download",
+
+    // Immediately run the target upload connecting
+    // When attaching to a remote program, you
+    // may want to set this to false 
+    "run_after_init": true,
+
+    // Attempt to update stack information while the program is running
+    // If your remote target does not support non-stop, set this to false
+    "update_while_running" : true,
+
+    // Attach to a remote target?  This is needed here because "-gdb-set target-async 1" must be
+    // done prior to attaching
+    "attach_cmd" : "notset",
 
     // For the larger binaries with lot of shared libraries
     // the loading within the gdb could take much longer.
