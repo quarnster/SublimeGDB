@@ -121,6 +121,7 @@ gdb_bkp_view = None
 
 gdb_shutting_down = False
 gdb_process = None
+gdb_server_process = None
 gdb_stack_frame = None
 gdb_stack_index = 0
 
@@ -1315,11 +1316,14 @@ def update_cursor():
     global gdb_stack_index
     global gdb_stack_frame
 
+    if not get_setting("update_while_running", True) and gdb_run_status == "running":
+        return
+
     res = run_cmd("-stack-info-frame", True)
     if get_result(res) == "error":
         if gdb_run_status != "running":
             print("run_status is %s, but got error: %s" % (gdb_run_status, res))
-        return
+            return
     currFrame = parse_result_line(res)["frame"]
     gdb_stack_index = int(currFrame["level"])
 
@@ -1368,16 +1372,21 @@ def gdboutput(pipe):
         try:
             line = pipe.readline()
             if len(line) == 0:
+                log_debug("gdb_%s: broken pipe\n" % ("stdout" if pipe == gdb_process.stdout else "stderr"))
                 break
             line = line.strip().decode(sys.getdefaultencoding())
             log_debug("gdb_%s: %s\n" % ("stdout" if pipe == gdb_process.stdout else "stderr", line))
             gdb_session_view.add_line("%s\n" % line, False)
+
+            if pipe != gdb_process.stdout:
+                continue
 
             run_status = run_status_regex.match(line)
             if run_status is not None:
                 gdb_run_status = run_status.group(2)
                 reason = re.search("(?<=reason=\")[a-zA-Z0-9\-]+(?=\")", line)
                 if reason is not None and reason.group(0).startswith("exited"):
+                    print("exiting %s" % line)
                     run_cmd("-gdb-exit")
                 elif not "running" in gdb_run_status and not gdb_shutting_down:
                     thread_id = re.search('thread-id="(\d+)"', line)
@@ -1557,6 +1566,7 @@ class GdbInput(sublime_plugin.WindowCommand):
 class GdbLaunch(sublime_plugin.WindowCommand):
     def run(self):
         global gdb_process
+        global gdb_server_process
         global gdb_run_status
         global gdb_bkp_window
         global gdb_bkp_view
@@ -1594,8 +1604,17 @@ class GdbLaunch(sublime_plugin.WindowCommand):
             if not os.path.exists(path):
                 sublime.error_message("The directory given does not exist: %s" % path)
                 return
+
+            # Optionally Launch the GDB Server
+            gdb_server_cmd = get_setting("server_commandline", "notset")
+            gdb_server_dir = get_setting("server_workingdir", "notset")
+            if (gdb_server_cmd != "notset") and (gdb_server_dir != "notset"):
+                print("gdb_server_cmd: %s" % gdb_server_cmd)
+                print("gdb_server_dir: %s" % gdb_server_dir)
+                gdb_server_process = subprocess.Popen(gdb_server_cmd, shell=True, cwd=gdb_server_dir)
+
             gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
-                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             log_debug("Process: %s\n" % gdb_process)
             gdb_bkp_window = sublime.active_window()
@@ -1654,11 +1673,15 @@ It seems you're not running gdb with the "mi" interpreter. Please add
                 run_cmd("-gdb-set disassembly-flavor att")
             # if gdb_nonstop:
             #     run_cmd("-gdb-set non-stop on")
-
+            attach_cmd = get_setting("attach_cmd","notset")
+            if(attach_cmd != "notset"):
+                run_cmd(attach_cmd)
             gdb_breakpoint_view.sync_breakpoints()
-            gdb_run_status = "running"
-
-            run_cmd(get_setting("exec_cmd", "-exec-run"), True)
+            if(get_setting("run_after_init", True)):
+                gdb_run_status = "running"
+                run_cmd(get_setting("exec_cmd", "-exec-run"), True)
+            else:
+                gdb_run_status = "stopped"
 
             show_input()
         else:
@@ -1691,6 +1714,8 @@ class GdbExit(sublime_plugin.WindowCommand):
         gdb_shutting_down = True
         wait_until_stopped()
         run_cmd("-gdb-exit", True)
+        if gdb_server_process:
+            gdb_server_process.terminate()
 
     def is_enabled(self):
         return is_running()
@@ -1698,6 +1723,15 @@ class GdbExit(sublime_plugin.WindowCommand):
     def is_visible(self):
         return is_running()
 
+class GdbLoad(sublime_plugin.WindowCommand):
+    def run(self):
+        run_cmd(get_setting("load_cmd", "-target-download"))
+
+    def is_enabled(self):
+        return is_running() and gdb_run_status != "running"
+
+    def is_visible(self):
+        return is_running() and gdb_run_status != "running"
 
 class GdbPause(sublime_plugin.WindowCommand):
     def run(self):
