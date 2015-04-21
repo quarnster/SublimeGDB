@@ -1616,9 +1616,15 @@ class GdbLaunch(sublime_plugin.WindowCommand):
             gdb_server_cmd = get_setting("server_commandline", "notset")
             gdb_server_dir = get_setting("server_workingdir", "notset")
             if (gdb_server_cmd != "notset") and (gdb_server_dir != "notset"):
+
+                gdb_server_cmd = expand_path(gdb_server_cmd, self.window)
+                gdb_server_dir = expand_path(gdb_server_dir, self.window)
+                gdb_server_shell = get_setting("server_shell", False)
                 log_debug("gdb_server_cmd: %s" % gdb_server_cmd)
                 log_debug("gdb_server_dir: %s" % gdb_server_dir)
-                gdb_server_process = subprocess.Popen(gdb_server_cmd, shell=True, cwd=gdb_server_dir)
+                log_debug("gdb_server_dir: %s" % gdb_server_shell)
+                gdb_server_process = subprocess.Popen(gdb_server_cmd, shell=gdb_server_shell, cwd=gdb_server_dir)
+
 
             gdb_process = subprocess.Popen(commandline, shell=True, cwd=path,
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
