@@ -841,13 +841,17 @@ class GDBCallstackView(GDBView):
 
 
 class GDBThread:
-    def __init__(self, id, state="UNKNOWN", func="???()"):
+    def __init__(self, id, state="UNKNOWN", func="???()", details=None):
         self.id = id
         self.state = state
         self.func = func
+        self.details = details
 
     def format(self):
-        return "%03d - %10s - %s\n" % (self.id, self.state, self.func)
+        if self.details:
+            return "%03d - %10s - %s - %s\n" % (self.id, self.state, self.details, self.func)
+        else:
+            return "%03d - %10s - %s\n" % (self.id, self.state, self.func)
 
 
 class GDBThreadsView(GDBView):
@@ -899,7 +903,8 @@ class GDBThreadsView(GDBView):
                             if "value" in arg:
                                 args += " = " + arg["value"]
                     func = "%s(%s);" % (func, args)
-                self.threads.append(GDBThread(int(thread["id"]), thread["state"], func))
+                print("thread %s" % thread)
+                self.threads.append(GDBThread(int(thread["id"]), thread["state"], func, thread["details"]))
 
         if "current-thread-id" in ids:
             self.current_thread = int(ids["current-thread-id"])
