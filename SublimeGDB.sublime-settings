@@ -11,7 +11,8 @@
     //
     // }
     //
-    // ${home}, ${project_path:} and ${folder:} tokens can be used in the workingdir option.
+    // ${home}, ${project_path:}, ${folder:}, ${file} and ${file_base_name}
+    // tokens can be used in 'workingdir', 'commandline', 'arguments' options.
     //
     // ${home} is replaced with the value of the HOME environment variable.
     //
@@ -23,11 +24,25 @@
     // ${folder:} is replaced with the dirname of the given path.
     // Example: ${folder:/path/to/file} is replaced with "/path/to".
     // "workingdir": "/tmp",
+    //
+    // ${file} is replaced with absolute path to currently open file (if any)
+    // Example: /home/user/main.cpp
+    //
+    // ${file_base_name} is replaced with name without extension of currently
+    // open file (if any)
+    // Example: replaced with "main" for file "/home/user/main.cpp"
     "workingdir": "notset",
 
     // NOTE: You MUST provide --interpreter=mi for the plugin to work
     // "commandline": "gdb --interpreter=mi ./executable",
     "commandline": "notset",
+
+    // Arguments for the program.
+    // Example: to run "./executable foo bar"
+    // "arguments": "foo bar"
+    // To provide user input (stdin) use
+    // "arguments": "< input.dat"
+    "arguments": "",
 
     // The command to use to run the program.
     // If you are attaching to a remote program, you

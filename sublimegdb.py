@@ -100,6 +100,11 @@ def expand_path(value, window):
     if os.getenv("HOME"):
         value = re.sub(r'\${home}', re.escape(os.getenv('HOME')), value)
     value = re.sub(r'\${folder:(?P<file>.*)}', lambda m: os.path.dirname(m.group('file')), value)
+    view = window.active_view()
+    file_name = view.file_name();
+    if file_name:
+        value = re.sub(r'\${file}', lambda m: file_name, value)
+        value = re.sub(r'\${file_base_name}', lambda m: os.path.splitext(os.path.basename(file_name))[0], value)
     value = value.replace('\\', os.sep)
     value = value.replace('/', os.sep)
 
@@ -1574,8 +1579,10 @@ class GdbLaunch(sublime_plugin.WindowCommand):
             if isinstance(commandline, list):
                 # backwards compatibility for when the commandline was a list
                 commandline = " ".join(commandline)
+            # note path expanding happens before add/switch view
             commandline = expand_path(commandline, self.window)
             path = expand_path(get_setting("workingdir", "/tmp", view), self.window)
+            arguments = expand_path(get_setting("arguments", ""), self.window)
             log_debug("Running: %s\n" % commandline)
             log_debug("In directory: %s\n" % path)
             if commandline == "notset" or path == "notset":
@@ -1658,6 +1665,8 @@ It seems you're not running gdb with the "mi" interpreter. Please add
             gdb_breakpoint_view.sync_breakpoints()
             gdb_run_status = "running"
 
+            if arguments:
+                run_cmd("-exec-arguments " + arguments)
             run_cmd(get_setting("exec_cmd", "-exec-run"), True)
 
             show_input()
