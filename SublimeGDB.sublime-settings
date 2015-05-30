@@ -10,6 +10,19 @@
     //      "sublimegdb_commandline": "gdb --interpreter=mi ./your_executable_name"
     //
     // }
+    // 
+    // generalized pattern for using always the current open file with an executable name 
+    // as the current file
+    // "settings":
+    // {
+    //      "sublimegdb_workingdir": "${folder: ${file}}",
+    //      // put your arguments hear
+    //      "sublimegdb_arguments": "",
+    //      // NOTE: You MUST provide --interpreter=mi for the plugin to work
+    //      "sublimegdb_commandline": "gdb --interpreter=mi --args ./${file_base_name}"
+    //      
+    //
+    // }
     //
     // ${home}, ${project_path:}, ${folder:}, ${file} and ${file_base_name}
     // tokens can be used in 'workingdir', 'commandline', 'arguments' options.
