@@ -904,7 +904,7 @@ class GDBThreadsView(GDBView):
                                 args += " = " + arg["value"]
                     func = "%s(%s);" % (func, args)
                 print("thread %s" % thread)
-                self.threads.append(GDBThread(int(thread["id"]), thread["state"], func, thread["details"]))
+                self.threads.append(GDBThread(int(thread["id"]), thread["state"], func, thread.get("details")))
 
         if "current-thread-id" in ids:
             self.current_thread = int(ids["current-thread-id"])
