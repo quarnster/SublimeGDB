@@ -104,14 +104,8 @@ def expand_path(value, window):
     if os.getenv("HOME"):
         value = re.sub(r'\${home}', re.escape(os.getenv('HOME')), value)
     value = re.sub(r'\${env:(?P<variable>.*)}', lambda m: os.getenv(m.group('variable')), value)
-    
     # search in projekt for path and get folder from path
-    if window.extract_variables :
-        # a better way to expand ${project_path} accord to use sublime.api window.extract_variables
-        value = re.sub(r'\${project_path:(?P<file>[^}]+)}', lambda m: window.extract_variables()['project_path'] + "\\" , value)
-    else: 
-        value = re.sub(r'\${project_path:(?P<file>[^}]+)}', lambda m: len(get_existing_files(m)) > 0 and get_existing_files(m)[0] or m.group('file'), value)
-    
+    value = re.sub(r'\${project_path:(?P<file>[^}]+)}', lambda m: len(get_existing_files(m)) > 0 and get_existing_files(m)[0] or m.group('file'), value)
     value = re.sub(r'\${folder:(?P<file>.*)}', lambda m: os.path.dirname(m.group('file')), value)
     value = value.replace('\\', os.sep)
     value = value.replace('/', os.sep)
