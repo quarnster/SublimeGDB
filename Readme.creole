@@ -17,19 +17,28 @@ GDB plugin for Sublime Text 2. Filing issues are not welcome (and thus disabled)
 
 See [[https://github.com/quarnster/SublimeGDB/blob/master/Default.sublime-keymap|the default key bindings]] and [[https://github.com/quarnster/SublimeGDB/blob/master/Default.sublime-mousemap|the default mouse map]].
 
-In short:
-* Open up the default settings via the command palette and begin typing GDB and select the default.
-* See what options are available, and open up the User SublimeGDB preferences to tweak any values
-* If you have multiple projects, you most likely want to put project specific setting in your project file, with a prefixed "sublimegdb_". See the comments at the top of the default SublimeGDB preferences for an example.
-* Once you're all configured, you can toggle breakpoints with F9 (OSX Users might want to change the key binding, or disable the "Exposé and Spaces" key bindings in the System Preferences)
+The GDB plugin is pre-configured for the simplest scenario, where your code contains only one C/C++ file, and is built to a binary with the same filename, e.g. compiling "main.cpp" to "main".
+
+For any other scenario, you need to specify where the generated binary is with the "commandline" option in the configuration file.
+
+Once you're all configured, you can:
+* Toggle breakpoints with F9 (OSX Users might want to change the key binding, or disable the "Exposé and Spaces" key bindings in the System Preferences)
 * Launch with F5
 * Step over with F10
 * Step into with F11
 * Step out with Shift+F11
-* Click on the appropriate line in the GDB Callstack view to go to that stack frame
-* Click a variable in the GDB Variables view to show its children (if available)
-* Double click a variable in the GDB Variables view to modify its value
-* You can also access some commands by right clicking in any view
+* Continue execution with F5
+
+During debugging, you can also:
+* In the GDB Callstack view, click on the appropriate line to go to that stack frame
+* In the GDB Variables view, click a variable to show its children (if available), or double click to modify its value
+* In any GDB view, right clicking to access some commands from the context menu
+
+=== Configuration files ===
+
+* ~/.config/sublime-text-3/Packages/SublimeGDB/SublimeGDB.sublime-settings
+* ~/.config/sublime-text-3/Packages/User/SublimeGDB.sublime-settings
+* <YourProject>.sublime-project. Note: options in this file need be prefixed with "sublimegdb_"
 
 === Show your support ===
 

@@ -44,11 +44,11 @@
     // ${file_base_name} is replaced with name without extension of currently
     // open file (if any)
     // Example: replaced with "main" for file "/home/user/main.cpp"
-    "workingdir": "notset",
+    "workingdir": "${folder:${file}}",
 
     // NOTE: You MUST provide --interpreter=mi for the plugin to work
     // "commandline": "gdb --interpreter=mi ./executable",
-    "commandline": "notset",
+    "commandline": "gdb --interpreter=mi ${folder:${file}}/${file_base_name}",
 
 
     // Arguments for the program.
