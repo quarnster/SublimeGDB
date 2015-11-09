@@ -417,12 +417,14 @@ class GDBVariable:
 
     def expand(self):
         self.is_expanded = True
-        if not (len(self.children) == 0 and int(self.valuepair["numchild"]) > 0):
+        if not (len(self.children) == 0 and self.has_children() > 0):
             return
         self.add_children(self.get_name())
 
     def has_children(self):
-        return int(self.valuepair["numchild"]) > 0
+        numchild = int(self.valuepair["numchild"])
+        more = 0 if "has_more" not in self.valuepair else int(self.valuepair["has_more"])
+        return numchild > 0 or more > 0
 
     def collapse(self):
         self.is_expanded = False
@@ -1707,6 +1709,9 @@ It seems you're not running gdb with the "mi" interpreter. Please add
             else:
                 gdb_run_status = "stopped"
 
+            if(get_setting("enable_pretty_printing", True)):
+                run_cmd("-enable-pretty-printing")
+            
 
             show_input()
         else:

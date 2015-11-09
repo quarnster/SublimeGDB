@@ -163,6 +163,29 @@
     // Whether to log the raw data read from and written to the gdb session and the inferior program.
     "debug": true,
 
+    // Enables pretty printing. For example:
+    //
+    // std::string testStdString = "Foobar"
+    // -std::vector<int, std::allocator<int> > someVectorOfInt = {...}
+    //  int [0] = 1
+    //  int [1] = 2
+    //  int [2] = 3
+    //  int [3] = 4
+    //
+    // To enable this feature, it should be enabled is gdb too, see this: https://sourceware.org/gdb/wiki/STLSupport
+    // You should checkout latest printers:
+    // svn co svn://gcc.gnu.org/svn/gcc/trunk/libstdc++-v3/python
+    // And add to ~/.gdbinit the following:
+    //
+    // python
+    // import sys
+    // sys.path.insert(0, '<path to "python" directory>')
+    // from libstdcxx.v6.printers import register_libstdcxx_printers
+    // register_libstdcxx_printers (None)
+    // end
+    //
+    "enable_pretty_printing": true,
+
     // Disables showing the error message dialog when something goes wrong
     "i_know_how_to_use_gdb_thank_you_very_much": false
 }
