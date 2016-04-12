@@ -1684,6 +1684,7 @@ It seems you're not running gdb with the "mi" interpreter. Please add
                 return
             run_cmd("-inferior-tty-set %s" % name, True)
 
+            run_cmd("-enable-pretty-printing")
             run_cmd("-gdb-set target-async 1")
             run_cmd("-gdb-set pagination off")
             dis_asm_flavor = get_setting("disassembly_flavor", "att", view)
