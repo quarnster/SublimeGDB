@@ -359,8 +359,10 @@ class GDBVariable:
                     self["numchild"] = d[key]
                 else:
                     self[key[4:]] = d[key]
-            elif key == "value":
+            else:
                 self[key] = d[key]
+        if (('dynamic' in self) and ('dynamic' not in d)):
+            del self['dynamic']
 
     def get_expression(self):
         expression = ""
@@ -417,12 +419,11 @@ class GDBVariable:
 
     def expand(self):
         self.is_expanded = True
-        if not (len(self.children) == 0 and int(self.valuepair["numchild"]) > 0):
-            return
-        self.add_children(self.get_name())
+        if ((not self.children) and self.has_children()):
+            self.add_children(self.get_name())
 
     def has_children(self):
-        return int(self.valuepair["numchild"]) > 0
+        return (int(self["numchild"]) > 0) or (("dynamic" in self) and (0 < int(self["has_more"])))
 
     def collapse(self):
         self.is_expanded = False
@@ -443,6 +444,27 @@ class GDBVariable:
         self.valuepair[key] = value
         if key == "value":
             self.dirty = True
+
+    @property
+    def is_dynamic(self):
+        return ('dynamic' in self)
+
+    def update_from(self, var):
+        if (var.is_expanded):
+            self.expand()
+            for child in self.children:
+                otherChild = var.find_child_expression(child["exp"])
+                if (otherChild):
+                    child.update_from(otherChild)
+                else:
+                    child.dirty = True
+        self.dirty = (self["value"] != var["value"])
+
+    def find_child_expression(self, exp):
+        for child in self.children:
+            if (child["exp"] == exp):
+                return child
+        return None
 
     def clear_dirty(self):
         self.dirty = False
@@ -664,11 +686,11 @@ class GDBVariablesView(GDBView):
         if v:
             self.variables.append(v)
 
-    def create_variable(self, exp):
+    def create_variable(self, exp, show_error = True):
         line = run_cmd("-var-create - * %s" % exp, True)
-        if get_result(line) == "error" and "&" in exp:
+        if get_result(line, False) == "error" and "&" in exp:
             line = run_cmd("-var-create - * %s" % exp.replace("&", ""), True)
-        if get_result(line) == "error":
+        if get_result(line, show_error) == "error":
             return None
         var = parse_result_line(line)
         var['exp'] = exp
@@ -678,8 +700,18 @@ class GDBVariablesView(GDBView):
         if not self.should_update():
             return
         if sameFrame:
-            for var in self.variables:
-                var.clear_dirty()
+            variables = []
+            for var in self.variables:    # completely replace dynamic variables because we don't always get proper update notifications
+                if (var.is_dynamic):
+                    var.delete()
+                    newVar = self.create_variable(var['exp'], False)
+                    if (newVar):    # may have gone out of scope without notification
+                        newVar.update_from(var)
+                        variables.append(newVar)
+                else:
+                    var.clear_dirty()
+                    variables.append(var)
+            self.variables = variables
             ret = parse_result_line(run_cmd("-var-update --all-values *", True))["changelist"]
             if "varobj" in ret:
                 ret = listify(ret["varobj"])
@@ -688,14 +720,15 @@ class GDBVariablesView(GDBView):
                 name = value["name"]
                 for var in self.variables:
                     real = var.find(name)
-                    if real is not None:
+                    if (real is not None):
                         if  "in_scope" in value and value["in_scope"] == "false":
                             real.delete()
                             dellist.append(real)
                             continue
-                        real.update(value)
-                        if not "value" in value and not "new_value" in value:
-                            real.update_value()
+                        if (not real.is_dynamic):
+                            real.update(value)
+                            if not "value" in value and not "new_value" in value:
+                                real.update_value()
                         break
             for item in dellist:
                 self.variables.remove(item)
@@ -1309,9 +1342,9 @@ def resume():
     run_cmd("-exec-continue", True)
 
 
-def get_result(line):
+def get_result(line, show_error = True):
     res = result_regex.search(line).group(0)
-    if res == "error" and not get_setting("i_know_how_to_use_gdb_thank_you_very_much", False):
+    if show_error and res == "error" and not get_setting("i_know_how_to_use_gdb_thank_you_very_much", False):
         sublime.error_message("%s\n\n%s" % (line, "\n".join(traceback.format_stack())))
     return res
 
