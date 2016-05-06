@@ -423,7 +423,7 @@ class GDBVariable:
             self.add_children(self.get_name())
 
     def has_children(self):
-        return (int(self["numchild"]) > 0) or (("dynamic" in self) and (0 < int(self["has_more"])))
+        return (int(self["numchild"]) > 0) or (("dynamic" in self) and (0 < int(self.valuepair.get("has_more", 0))))
 
     def collapse(self):
         self.is_expanded = False
