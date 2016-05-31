@@ -50,6 +50,9 @@
     // "commandline": "gdb --interpreter=mi ./executable",
     "commandline": "notset",
 
+    // Environments for running gdb and gdb server
+    // Example: "env": {"DISPLAY": ":100"}
+    "env": "notset",
 
     // Arguments for the program.
     // Example: to run "./executable foo bar"
