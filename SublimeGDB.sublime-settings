@@ -24,6 +24,34 @@
     //
     // }
     //
+    // If you want to debug different executables as part of the same project, you can add something
+    // like this to your project settings:
+    //
+    // "settings":
+    // {
+    //      "sublimegdb_executables":
+    //      {
+    //          "first_executable_name":
+    //          {
+    //              "workingdir": "${folder:${project_path:first_executable_name}}",
+    //              "commandline": "gdb --interpreter=mi ./first_executable"
+    //          },
+    //          "second_executable_name":
+    //          {
+    //              "workingdir": "${folder:${project_path:second_executable_name}}",
+    //              "commandline": "gdb --interpreter=mi ./second_executable"
+    //          }
+    //      }
+    // }
+    //
+    // When you start debugging, you will be prompted to choose from one of your executables. Any
+    // settings not specified for that project will be searched in your project settings (with a
+    // sublimegdb_ prefix), then in your user settings, then in the default settings.
+    //
+    // (Note: if you have multiple executables, and you have a breakpoint set in a source file which
+    // is not included in the current executable, you may have to set either debug_ext or
+    // i_know_how_to_use_gdb_thank_you_very_much.)
+    //
     // ${home}, ${project_path:}, ${folder:}, ${file} and ${file_base_name}
     // tokens can be used in 'workingdir', 'commandline', 'arguments' options.
     //

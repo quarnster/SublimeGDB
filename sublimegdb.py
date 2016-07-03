@@ -61,15 +61,24 @@ except:
     import queue as Queue
     from SublimeGDB.resultparser import parse_result_line
 
+exec_settings = {}
+
 def get_setting(key, default=None, view=None):
     try:
         if view is None:
             view = sublime.active_window().active_view()
         s = view.settings()
+
+        # Try executable specific settings first
+        if exec_settings and key in exec_settings:
+            return exec_settings[key]
+        # Then try user settings
         if s.has("sublimegdb_%s" % key):
             return s.get("sublimegdb_%s" % key)
     except:
         pass
+
+    # Default settings
     return sublime.load_settings("SublimeGDB.sublime-settings").get(key, default)
 
 
@@ -1577,6 +1586,28 @@ class GdbInput(sublime_plugin.WindowCommand):
 
 class GdbLaunch(sublime_plugin.WindowCommand):
     def run(self):
+        global exec_settings
+        s = self.window.active_view().settings()
+        exec_choices = s.get("sublimegdb_executables")
+
+        if exec_choices is None or type(exec_choices) != dict:
+            # No executable specific settings, go ahead and launch
+            exec_settings = {}
+            self.launch()
+            return
+
+        def on_choose(index):
+            global exec_settings
+            if index == -1:
+                # User cancelled the panel, abort launch
+                return
+            exec_name = list(exec_choices)[index]
+            exec_settings = exec_choices[exec_name]
+            self.launch()
+
+        self.window.show_quick_panel(list(exec_choices), on_choose)
+
+    def launch(self):
         global gdb_process
         global gdb_server_process
         global gdb_run_status

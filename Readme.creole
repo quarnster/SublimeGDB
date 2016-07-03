@@ -21,6 +21,7 @@ In short:
 * Open up the default settings via the command palette and begin typing GDB and select the default.
 * See what options are available, and open up the User SublimeGDB preferences to tweak any values
 * If you have multiple projects, you most likely want to put project specific setting in your project file, with a prefixed "sublimegdb_". See the comments at the top of the default SublimeGDB preferences for an example.
+* If you have multiple executables in the same project, you can add a "sublimegdb_executables" setting to your project settings, and add an entry for each executable's settings.
 * Once you're all configured, you can toggle breakpoints with F9 (OSX Users might want to change the key binding, or disable the "Exposé and Spaces" key bindings in the System Preferences)
 * Launch with F5
 * Step over with F10
