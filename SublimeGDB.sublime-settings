@@ -15,7 +15,7 @@
     // as the current file
     // "settings":
     // {
-    //      "sublimegdb_workingdir": "${folder: ${file}}",
+    //      "sublimegdb_workingdir": "${folder:${file}}",
     //      // put your arguments hear
     //      "sublimegdb_arguments": "",
     //      // NOTE: You MUST provide --interpreter=mi for the plugin to work
