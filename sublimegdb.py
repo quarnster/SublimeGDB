@@ -1299,6 +1299,9 @@ def run_cmd(cmd, block=False, mimode=True, timeout=10):
 
 def wait_until_stopped():
     if gdb_run_status == "running":
+        if get_setting("terminate_on_exit", False):
+            gdb_process.terminate()
+            return True    
         result = run_cmd("-exec-interrupt --all", True)
         if "^done" in result:
             i = 0
