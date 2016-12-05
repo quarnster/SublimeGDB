@@ -1437,7 +1437,7 @@ def gdboutput(pipe):
     sublime.set_timeout(update_view_markers, 0)
 
     for view in gdb_views:
-        sublime.set_timeout(view.on_session_ended, 0)
+        sublime.set_timeout(view.on_session_ended, 0.1)
     sublime.set_timeout(cleanup, 0)
 
 def cleanup():
