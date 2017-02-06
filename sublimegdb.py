@@ -126,6 +126,8 @@ DEBUG = None
 DEBUG_FILE = None
 __debug_file_handle = None
 
+gdb_gvar_panel_list = []
+gdb_lastoutput = ""
 gdb_lastresult = ""
 gdb_lastline = ""
 gdb_cursor = ""
@@ -635,6 +637,7 @@ class GDBVariablesView(GDBView):
     def __init__(self):
         super(GDBVariablesView, self).__init__("GDB Variables", False, settingsprefix="variables")
         self.variables = []
+        self.gvariables = []
 
     def open(self):
         super(GDBVariablesView, self).open()
@@ -647,9 +650,20 @@ class GDBVariablesView(GDBView):
         output = ""
         line = 0
         dirtylist = []
+
+        if len(self.gvariables) > 0:
+            output, line = ("====== GLOBAL =======\n", line+1)
+            self.add_line(output)
+            for g in self.gvariables:
+                output, line = g.format(line=line, dirty=dirtylist)
+                self.add_line(output)
+
+        output, line = ("====== LOCAL  =======\n", line+1)
+        self.add_line(output)
         for local in self.variables:
             output, line = local.format(line=line, dirty=dirtylist)
             self.add_line(output)
+
         self.update()
         regions = []
         v = self.get_view()
@@ -668,10 +682,13 @@ class GDBVariablesView(GDBView):
                 return [x["name"] for x in res]
         return []
 
-    def add_variable(self, exp):
+    def add_variable(self, exp, g = False):
         v = self.create_variable(exp)
         if v:
-            self.variables.append(v)
+            if g == True:
+                self.gvariables.append(v)
+            else:
+                self.variables.append(v)
 
     def create_variable(self, exp):
         line = run_cmd("-var-create - * %s" % exp, True)
@@ -686,12 +703,27 @@ class GDBVariablesView(GDBView):
     def update_variables(self, sameFrame):
         if not self.should_update():
             return
+
+        ret = parse_result_line(run_cmd("-var-update --all-values *", True))["changelist"]
+        if "varobj" in ret:
+            ret = listify(ret["varobj"])
+
+        # Update value of global variables
+        for var in self.gvariables:
+            var.clear_dirty()
+            for value in ret:
+                name = value["name"]
+                for var in self.gvariables:
+                    real = var.find(name)
+                    if real is not None:
+                        real.update(value)
+                        if not "value" in value and not "new_value" in value:
+                            real.update_value()
+                        break
+
         if sameFrame:
             for var in self.variables:
                 var.clear_dirty()
-            ret = parse_result_line(run_cmd("-var-update --all-values *", True))["changelist"]
-            if "varobj" in ret:
-                ret = listify(ret["varobj"])
             dellist = []
             for value in ret:
                 name = value["name"]
@@ -734,11 +766,12 @@ class GDBVariablesView(GDBView):
             loc = self.extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
             for var in loc:
                 self.add_variable(var)
+
         self.update_view()
 
     def get_variable_at_line(self, line, var_list=None):
         if var_list is None:
-            var_list = self.variables
+            var_list = self.gvariables + self.variables
         if len(var_list) == 0:
             return None
 
@@ -1264,9 +1297,11 @@ count = 0
 
 def run_cmd(cmd, block=False, mimode=True, timeout=10):
     global count
+    global gdb_lastoutput
     if not is_running():
         return "0^error,msg=\"no session running\""
 
+    gdb_lastoutput = ""
     timeoutcount = timeout/0.001
 
     ### handle a list of commands by recursively calling run_cmd
@@ -1383,6 +1418,7 @@ def gdboutput(pipe):
     global gdb_process
     global gdb_lastresult
     global gdb_lastline
+    global gdb_lastoutput
     global gdb_stack_frame
     global gdb_run_status
     global gdb_stack_index
@@ -1420,8 +1456,9 @@ def gdboutput(pipe):
                 gdb_lastresult = line
 
             if line.startswith("~"):
-                gdb_console_view.add_line(
-                    line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t"), False)
+                line_ = line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t")
+                gdb_lastoutput += line_
+                gdb_console_view.add_line(line_, False)
 
         except:
             traceback.print_exc()
@@ -1748,6 +1785,11 @@ It seems you're not running gdb with the "mi" interpreter. Please add
             else:
                 gdb_run_status = "stopped"
 
+            # Add global variables of previous execution
+            gvariables = list(gdb_variables_view.gvariables)
+            gdb_variables_view.gvariables = []
+            for var in gvariables:
+                gdb_variables_view.add_variable(var['exp'], True)
 
             show_input()
         else:
@@ -1950,6 +1992,54 @@ class GdbExpandVariable(sublime_plugin.TextCommand):
             return True
         return False
 
+class GdbOpenGlobalVariablePanel(sublime_plugin.TextCommand):
+    def run(self, edit):
+        global gdb_gvar_panel_list
+
+        fn = sublime.active_window().active_view().file_name()
+        if fn is None:
+            sublime.status_message("Don't display global variables panel in gdb view")
+            return
+
+        if len(gdb_gvar_panel_list) == 0:
+            # Retrieve all the global variables
+            run_cmd("info variables", True)
+            # Build the list for the panel
+            src = "empty"
+            pattern = re.compile("File (.*):")
+            for line in gdb_lastoutput.split('\n'):
+                if 'All defined variables' in line:
+                    continue
+                if 'Non-debugging' in line:
+                    # Next symbols without debugging info (dwarf). Skip them
+                    break
+                if pattern.match(line):
+                    src = line.split("File ")[1].split(":")[0]
+                    continue
+                if line.replace(" ", "").replace("\t", "") == "":
+                    continue
+                gdb_gvar_panel_list.append("%s (%s)" % (line, src))
+
+        # Show the panel
+        sublime.active_window().show_quick_panel(gdb_gvar_panel_list, self.on_done)
+
+
+    def on_done(self, index):
+        global gdb_gvar_panel_list
+        if index == -1:
+            return
+        line = gdb_gvar_panel_list[index]
+
+        # Many filter string to not consider fields of structure/enum/etc..
+        if line.startswith(" ") or "{" in line:
+            return
+
+        name = line.split(" ")[1].split(";")[0]
+        for var in gdb_variables_view.gvariables:
+            if name == var['exp']:
+                return
+        gdb_variables_view.add_variable(name, True)
+        gdb_variables_view.update_view()
 
 class GdbEditVariable(sublime_plugin.TextCommand):
     def run(self, edit):

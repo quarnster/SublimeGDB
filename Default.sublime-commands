@@ -81,4 +81,9 @@
         "caption": "SublimeGDB: Open Threads View",
         "command": "gdb_open_threads_view"
     }
+    {
+        "caption": "SublimeGDB: Open Global Variable Panel",
+        "command": "gdb_open_global_variable_panel"
+    },
+
 ]
