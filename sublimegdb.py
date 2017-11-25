@@ -1311,11 +1311,12 @@ def update_view_markers(view=None):
 count = 0
 
 
-def run_cmd(cmd, block=False, mimode=True, timeout=10):
+def run_cmd(cmd, block=False, mimode=True, timeout=None):
     global count
     if not is_running():
         return "0^error,msg=\"no session running\""
 
+    timeout = timeout or get_setting("gdb_command_timeout", 10)
     timeoutcount = timeout/0.001
 
     ### handle a list of commands by recursively calling run_cmd
