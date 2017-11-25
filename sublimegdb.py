@@ -263,6 +263,7 @@ class GDBView(object):
         self.view.set_name(self.name)
         self.view.set_scratch(True)
         self.view.set_read_only(True)
+        self.view.settings().set("scroll_past_end", False)
         # Setting command_mode to false so that vintage
         # does not eat the "enter" keybinding
         self.view.settings().set('command_mode', False)
@@ -299,6 +300,10 @@ class GDBView(object):
     def do_scroll(self, data):
         self.view.run_command("goto_line", {"line": data + 1})
 
+    def do_move_to_eof(self):
+        if self.view:
+            self.view.run_command("move_to", { "to": "eof", "extend": False })
+
     def do_set_viewport_position(self, data):
         # Shouldn't have to call viewport_extent, but it
         # seems to flush whatever value is stale so that
@@ -321,6 +326,13 @@ class GDBView(object):
         except:
             traceback.print_exc()
 
+    def on_activated(self):
+        # scroll to the end of the view on first activation
+        if self.doScroll and self.view.visible_region().empty():
+            # need a timeout because apparently a view can't be scrolled until
+            # it has been fully activated once
+            sublime.set_timeout(self.do_move_to_eof, 20)
+
     def on_session_ended(self):
         if get_setting("%s_clear_on_end" % self.settingsprefix, True):
             self.clear()
@@ -334,11 +346,15 @@ class GdbViewClear(sublime_plugin.TextCommand):
 
 class GdbViewAddLine(sublime_plugin.TextCommand):
     def run(self, edit, line, doScroll):
-        self.view.set_read_only(False)
-        self.view.insert(edit, self.view.size(), line)
-        self.view.set_read_only(True)
-        if doScroll:
-            self.view.show(self.view.size())
+        # force a scroll to the end if the last line is currently visible
+        force_scroll = False
+        if doScroll and self.view.visible_region().contains(self.view.size()):
+            force_scroll = True
+
+        self.view.run_command("append", { "characters": line, "force": True })
+
+        if force_scroll:
+            self.view.run_command("move_to", { "to": "eof", "extend": False })
 
 class GDBVariable:
     def __init__(self, vp=None, parent=None):
@@ -1252,7 +1268,7 @@ class GDBBreakpointView(GDBView):
 
 class GDBSessionView(GDBView):
     def __init__(self):
-        super(GDBSessionView, self).__init__("GDB Session", s=False, settingsprefix="session")
+        super(GDBSessionView, self).__init__("GDB Session", s=True, settingsprefix="session")
 
     def open(self):
         super(GDBSessionView, self).open()
@@ -1260,7 +1276,7 @@ class GDBSessionView(GDBView):
 
 
 gdb_session_view = GDBSessionView()
-gdb_console_view = GDBView("GDB Console", settingsprefix="console")
+gdb_console_view = GDBView("GDB Console", s=True, settingsprefix="console")
 gdb_variables_view = GDBVariablesView()
 gdb_callstack_view = GDBCallstackView()
 gdb_register_view = GDBRegisterView()
@@ -2039,6 +2055,13 @@ class GdbEventListener(sublime_plugin.EventListener):
     def on_activated(self, view):
         if view.file_name() is not None:
             update_view_markers(view)
+
+        # forward this event to GDBView
+        if view.name():
+            for gdb_view in gdb_views:
+                if view.name() == gdb_view.name:
+                    gdb_view.on_activated()
+                    break
 
     def on_load(self, view):
         if view.file_name() is not None:
