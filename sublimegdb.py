@@ -1096,6 +1096,8 @@ class GDBBreakpoint(object):
         if "bkpt" not in res:
             return
         bp = res["bkpt"]
+        if isinstance(bp, list): # choose the last of multiple entries
+            bp = bp[-1]
         if "fullname" in bp:
             self.resolved_filename = bp["fullname"]
         elif "file" in bp:
@@ -1109,7 +1111,7 @@ class GDBBreakpoint(object):
 
         if not "/" in self.resolved_filename and not "\\" in self.resolved_filename:
             self.resolved_filename = self.original_filename
-        self.number = int(bp["number"])
+        self.number = int(bp["number"].split(".")[0])
 
     def insert(self):
         # TODO: does removing the unicode-escape break things? what's the proper way to handle this in python3?
