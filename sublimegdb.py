@@ -1614,8 +1614,8 @@ def show_input():
 
 def input_on_done(s):
     if s.strip() != "quit":
-        show_input()
         gdb_command_history.append(s)
+        show_input()
     run_cmd(s)
 
 
