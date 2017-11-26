@@ -1072,11 +1072,14 @@ class GDBBreakpoint(object):
         self.original_filename = normalize(filename)
         self.original_line = line
         self.addr = addr
+        self.modified_line = None
         self.clear()
         self.add()
 
     @property
     def line(self):
+        if self.modified_line:
+            return self.modified_line
         if self.number != -1:
             return self.resolved_line
         return self.original_line
@@ -1091,6 +1094,11 @@ class GDBBreakpoint(object):
         self.resolved_filename = ""
         self.resolved_line = 0
         self.number = -1
+
+        if self.modified_line and not is_running():
+            # the next GDB runs we will use the modified line
+            self.original_line = self.modified_line
+            self.modified_line = None
 
     def breakpoint_added(self, res):
         if "bkpt" not in res:
@@ -1190,6 +1198,49 @@ class GDBBreakpointView(GDBView):
         for bkpt in self.breakpoints:
             bkpt.clear()
 
+    def on_view_modified(self, view):
+        if not self.breakpoints:
+            return
+
+        fn = view.file_name()
+        if fn is None:
+            return
+        fn = normalize(fn)
+
+        # use the modified regions to update the breakpoint locations
+        cur_regions = view.get_regions("sublimegdb.breakpoints")
+
+        # list of breakpoints with a line for this view
+        bkpts = []
+        for bkpt in self.breakpoints:
+            if bkpt.filename == fn and bkpt.addr == "":
+                bkpts.append(bkpt)
+
+        # sorting the breakpoints by their last region brings them into the same
+        # order as the current regions
+        cur_regions.sort()
+        bkpts.sort(key=lambda bkpt: bkpt.last_region)
+
+        need_update = False
+        for region, bkpt in zip(cur_regions, bkpts):
+            # if the current region's line and the breakpoint's differ we need
+            # to update it
+            new_line = view.rowcol(region.begin())[0] + 1
+            if new_line != bkpt.original_line:
+                if not is_running():
+                    bkpt.original_line = new_line
+                else:
+                    # this will only update the visible location of the
+                    # breakpoint but GDB will still stop at the original
+                    # location
+                    bkpt.modified_line = new_line
+
+                need_update = True
+
+        if need_update:
+            self.update_marker(view)
+            self.update_view()
+
     def update_marker(self, view):
         bps = []
         fn = view.file_name()
@@ -1197,8 +1248,15 @@ class GDBBreakpointView(GDBView):
             return
         fn = normalize(fn)
         for bkpt in self.breakpoints:
-            if bkpt.filename == fn and not (bkpt.line == gdb_cursor_position and fn == gdb_cursor):
-                bps.append(view.full_line(view.text_point(bkpt.line - 1, 0)))
+            # also add one for the current cursor position to allow updating the
+            # breakpoints when the view is modified
+            if bkpt.filename == fn:
+                region = view.full_line(view.text_point(bkpt.line - 1, 0))
+
+                # save this region  so that we can determine if it moved
+                bkpt.last_region = region
+
+                bps.append(region)
 
         view.add_regions("sublimegdb.breakpoints", bps,
                             get_setting("breakpoint_scope", "keyword.gdb"),
@@ -2065,6 +2123,10 @@ class GdbEventListener(sublime_plugin.EventListener):
                 if view.name() == gdb_view.name:
                     gdb_view.on_activated()
                     break
+
+    def on_modified(self, view):
+        # update the current breakpoint locations
+        gdb_breakpoint_view.on_view_modified(view)
 
     def on_load(self, view):
         if view.file_name() is not None:
