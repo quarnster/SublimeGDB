@@ -390,6 +390,25 @@ class GDBVariable:
         if (('dynamic' in self) and ('dynamic' not in d)):
             del self['dynamic']
 
+    def is_existing(self):
+        # if there is a parent this variable should be existing
+        if self.parent:
+            return True
+
+        # try to find the line where this variable was declared
+        output = run_python_cmd("python print(gdb.lookup_symbol(\"%s\")[0].line)" % self["exp"], True)
+        try:
+            line = int(output)
+
+            # if the cursor is after this position the variable should be
+            # existing
+            if gdb_cursor_position > line:
+                return True
+        except:
+            pass
+
+        return False
+
     def get_expression(self):
         expression = ""
         parent = self.parent
