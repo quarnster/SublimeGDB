@@ -463,6 +463,9 @@ class GDBVariable:
         return self.valuepair["name"]
 
     def expand(self):
+        if not self.is_existing():
+            return
+
         self.is_expanded = True
         if ((not self.children) and self.has_children()):
             self.add_children(self.get_name())
