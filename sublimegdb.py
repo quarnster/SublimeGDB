@@ -128,6 +128,7 @@ __debug_file_handle = None
 
 gdb_lastresult = ""
 gdb_lastline = ""
+gdb_last_console_line = ""
 gdb_cursor = ""
 gdb_cursor_position = 0
 gdb_last_cursor_view = None
@@ -1407,6 +1408,36 @@ def run_cmd(cmd, block=False, mimode=True, timeout=None):
     return count
 
 
+def run_python_cmd(cmd, block=False, timeout=None):
+    global count
+    global gdb_last_console_line
+    if not is_running():
+        return "0^error,msg=\"no session running\""
+
+    timeout = timeout or get_setting("gdb_command_timeout", 10)
+    timeoutcount = timeout/0.001
+
+    count = count + 1
+    cmd = "%d%s\n" % (count, cmd)
+    log_debug(cmd)
+
+    if gdb_session_view is not None:
+        gdb_session_view.add_line(cmd, False)
+    gdb_last_console_line = ""
+    gdb_process.stdin.write(cmd.encode(sys.getdefaultencoding()))
+    gdb_process.stdin.flush()
+    if block:
+        countstr = "%d^" % count
+        i = 0
+        while not gdb_lastresult.startswith(countstr) and i < timeoutcount:
+            i += 1
+            time.sleep(0.001)
+        if i >= timeoutcount:
+            raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
+        return gdb_last_console_line
+    return count
+
+
 def wait_until_stopped():
     if gdb_run_status == "running":
         result = run_cmd("-exec-interrupt --all", True)
@@ -1493,6 +1524,7 @@ def gdboutput(pipe):
     global gdb_process
     global gdb_lastresult
     global gdb_lastline
+    global gdb_last_console_line
     global gdb_stack_frame
     global gdb_run_status
     global gdb_stack_index
@@ -1530,8 +1562,11 @@ def gdboutput(pipe):
                 gdb_lastresult = line
 
             if line.startswith("~"):
-                gdb_console_view.add_line(
-                    line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t"), False)
+                console_line = line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t")
+                gdb_console_view.add_line(console_line, False)
+
+                # save the output (without the newline at the end)
+                gdb_last_console_line = console_line[:-1]
 
         except:
             traceback.print_exc()
