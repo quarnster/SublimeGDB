@@ -1342,7 +1342,7 @@ class GDBBreakpointView(GDBView):
             return
         pos = self.get_view().viewport_position()
         self.clear()
-        self.breakpoints.sort(key=lambda b: (b.number, b.filename, b.line))
+        self.breakpoints.sort(key=lambda b: (b.number, b.filename or "", b.line))
         for bkpt in self.breakpoints:
             self.add_line(bkpt.format())
         self.set_viewport_position(pos)
