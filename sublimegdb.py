@@ -136,6 +136,7 @@ gdb_bkp_layout = {}
 gdb_bkp_window = None
 gdb_bkp_view = None
 
+gdb_python_command_running = False
 gdb_shutting_down = False
 gdb_process = None
 gdb_server_process = None
@@ -1432,6 +1433,7 @@ def run_cmd(cmd, block=False, mimode=True, timeout=None):
 
 def run_python_cmd(cmd, block=False, timeout=None):
     global count
+    global gdb_python_command_running
     global gdb_last_console_line
     if not is_running():
         return "0^error,msg=\"no session running\""
@@ -1449,14 +1451,18 @@ def run_python_cmd(cmd, block=False, timeout=None):
     gdb_process.stdin.write(cmd.encode(sys.getdefaultencoding()))
     gdb_process.stdin.flush()
     if block:
-        countstr = "%d^" % count
-        i = 0
-        while not gdb_lastresult.startswith(countstr) and i < timeoutcount:
-            i += 1
-            time.sleep(0.001)
-        if i >= timeoutcount:
-            raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
-        return gdb_last_console_line
+        gdb_python_command_running = True
+        try:
+            countstr = "%d^" % count
+            i = 0
+            while not gdb_lastresult.startswith(countstr) and i < timeoutcount:
+                i += 1
+                time.sleep(0.001)
+            if i >= timeoutcount:
+                raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
+            return gdb_last_console_line
+        finally:
+            gdb_python_command_running = False
     return count
 
 
@@ -1585,7 +1591,8 @@ def gdboutput(pipe):
 
             if line.startswith("~"):
                 console_line = line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t")
-                gdb_console_view.add_line(console_line, False)
+                if not gdb_python_command_running:
+                    gdb_console_view.add_line(console_line, False)
 
                 # save the output (without the newline at the end)
                 gdb_last_console_line = console_line[:-1]
