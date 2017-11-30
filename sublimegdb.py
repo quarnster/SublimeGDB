@@ -1571,11 +1571,11 @@ def gdboutput(pipe):
 
     while True:
         try:
-            line = pipe.readline()
-            if len(line) == 0:
+            raw = pipe.readline()
+            if len(raw) == 0:
                 log_debug("gdb_%s: broken pipe\n" % ("stdout" if pipe == gdb_process.stdout else "stderr"))
                 break
-            line = line.strip().decode(sys.getdefaultencoding())
+            line = raw.strip().decode(sys.getdefaultencoding())
             log_debug("gdb_%s: %s\n" % ("stdout" if pipe == gdb_process.stdout else "stderr", line))
             gdb_session_view.add_line("%s\n" % line, False)
 
@@ -1606,6 +1606,19 @@ def gdboutput(pipe):
 
                 # save the output (without the newline at the end)
                 gdb_last_console_line = console_line[:-1]
+
+            # filter out the program output and print it on the console view
+            if not (line.startswith("(gdb)") or line.startswith("~") or
+                    line.startswith("=") or line.startswith("&\"") or
+                    command_result_regex.match(line) or
+                    run_status_regex.match(line)):
+                # use the raw output to show exactly what the program printed
+                console_line = raw.decode(sys.getdefaultencoding())
+
+                # correct the line endings
+                console_line = "\n".join(console_line.splitlines())
+
+                gdb_console_view.add_line("%s\n" % console_line, False)
 
         except:
             traceback.print_exc()
