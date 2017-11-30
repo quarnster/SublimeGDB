@@ -472,7 +472,17 @@ class GDBVariable:
             self.add_children(self.get_name())
 
     def has_children(self):
-        return (int(self["numchild"]) > 0) or (("dynamic" in self) and (0 < int(self.valuepair.get("has_more", 0))))
+        if (int(self["numchild"]) > 0 or
+                (self.is_dynamic and int(self.valuepair.get("has_more", 0)) > 0)):
+            return True
+
+        # for dynamic child variables the has_more field is not available so we
+        # have to actually list the children to find out if there are any
+        if self.is_dynamic and self.is_existing():
+            children = parse_result_line(run_cmd("-var-list-children \"%s\"" % self.get_name(), True))
+            return int(children["numchild"]) > 0
+
+        return False
 
     def collapse(self):
         self.is_expanded = False
