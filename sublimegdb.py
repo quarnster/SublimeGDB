@@ -997,7 +997,7 @@ class GDBThreadsView(GDBView):
                             if "value" in arg:
                                 args += " = " + arg["value"]
                     func = "%s(%s);" % (func, args)
-                print("thread %s" % thread)
+                log_debug("thread %s" % thread)
                 self.threads.append(GDBThread(int(thread["id"]), thread["state"], func, thread.get("details")))
 
         if "current-thread-id" in ids:
@@ -1485,7 +1485,7 @@ def wait_until_stopped():
                 i = i + 1
                 time.sleep(0.1)
             if i >= 100:
-                print("I'm confused... I think status is %s, but it seems it wasn't..." % gdb_run_status)
+                log_debug("I'm confused... I think status is %s, but it seems it wasn't..." % gdb_run_status)
                 return False
             return True
     return False
@@ -1522,7 +1522,7 @@ def update_cursor():
     res = run_cmd("-stack-info-frame", True)
     if get_result(res) == "error":
         if gdb_run_status != "running":
-            print("run_status is %s, but got error: %s" % (gdb_run_status, res))
+            log_debug("run_status is %s, but got error: %s" % (gdb_run_status, res))
             return
     currFrame = parse_result_line(res)["frame"]
     gdb_stack_index = int(currFrame["level"])
@@ -1818,7 +1818,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         DEBUG = get_setting("debug", False, view)
         DEBUG_FILE = expand_path(get_setting("debug_file", "stdout", view), self.window)
         if DEBUG:
-            print("Will write debug info to file: %s" % DEBUG_FILE)
+            log_debug("Will write debug info to file: %s" % DEBUG_FILE)
         if gdb_process is None or gdb_process.poll() is not None:
             commandline = get_setting("commandline", view=view)
             if isinstance(commandline, list):
