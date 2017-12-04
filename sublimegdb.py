@@ -488,10 +488,13 @@ class GDBVariable:
         self.is_expanded = False
 
     def __str__(self):
+        # apply the user-defined filters to the type
+        type = self.filter_type(self['type'])
+
         if not "dynamic_type" in self or len(self['dynamic_type']) == 0 or self['dynamic_type'] == self['type']:
-            return "%s %s = %s" % (self['type'], self['exp'], self['value'])
+            return "%s %s = %s" % (type, self['exp'], self['value'])
         else:
-            return "%s %s = (%s) %s" % (self['type'], self['exp'], self['dynamic_type'], self['value'])
+            return "%s %s = (%s) %s" % (type, self['exp'], self['dynamic_type'], self['value'])
 
     def __iter__(self):
         return self.valuepair.__iter__()
@@ -557,6 +560,23 @@ class GDBVariable:
         if self.is_dirty():
             dirty.append(self)
         return (output, line)
+
+    @staticmethod
+    def filter_type(type):
+        # use the regex module instead of re if available
+        sub = re.sub
+        try:
+            import regex
+            sub = regex.sub
+        except:
+            pass
+
+        # apply all user-defined filters
+        filters = get_setting("type_filters", [], gdb_variables_view)
+        for f in filters:
+            type = sub(f["pattern"], f["replace"], type)
+
+        return type
 
 def qtod(q):
     val = struct.pack("Q", q)
