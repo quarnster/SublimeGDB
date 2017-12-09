@@ -1691,12 +1691,12 @@ def programio(pty, tty):
             sublime.active_window().show_input_panel("stdin input expected: ", "input", self.on_done, None, lambda: self.queue.put(None))
 
         def readline(self):
-            ret = ""
+            ret = bytes()
             while True:
                 if not os.isatty(self.pty):
                     s = os.fstat(self.pty)
                     if self.off >= s.st_size and len(ret) == 0:
-                        return ret
+                        return bdecode(ret)
                 else:
                     import select
                     r, w, x = select.select([self.pty], [self.pty], [], 5.0)
@@ -1710,10 +1710,10 @@ def programio(pty, tty):
                         break
                 read = os.read(self.pty, 1)
                 self.off += len(read)
-                ret += bdecode(read)
-                if len(read) == 0 or ret.endswith("\n"):
+                ret += read
+                if len(read) == 0 or ret[-1] == ord('\n'):
                     break
-            return ret
+            return bdecode(ret)
 
         def close(self):
             os.close(self.pty)
