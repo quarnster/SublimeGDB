@@ -29,6 +29,7 @@ import threading
 import time
 import traceback
 import os
+import signal
 import sys
 import re
 try:
@@ -116,8 +117,14 @@ def expand_path(value, window):
     # search in projekt for path and get folder from path
     value = re.sub(r'\${project_path:(?P<file>[^}]+)}', lambda m: len(get_existing_files(m)) > 0 and get_existing_files(m)[0] or m.group('file'), value)
     value = re.sub(r'\${folder:(?P<file>.*)}', lambda m: os.path.dirname(m.group('file')), value)
-    value = value.replace('\\', os.sep)
-    value = value.replace('/', os.sep)
+    if get_setting("windows_bash_compatibility"):
+        value = value.replace('\\', '/')
+    else:
+        value = value.replace('\\', os.sep)
+        value = value.replace('/', os.sep)
+
+    # Working with WSL, do some tweaks
+    
 
     return value
 
@@ -126,6 +133,15 @@ DEBUG = None
 DEBUG_FILE = None
 __debug_file_handle = None
 
+sync_check_return_mutex = threading.Condition()
+sync_sending_cmd = threading.Lock()
+sync_status_mutex = threading.Condition()
+
+gdb_pid = 0
+gdb_windows_bash = False
+
+gdb_temp_stop = False
+gdb_sending_buffer = None
 gdb_lastresult = ""
 gdb_lastline = ""
 gdb_cursor = ""
@@ -149,6 +165,7 @@ if os.name == 'nt':
 gdb_run_status = None
 result_regex = re.compile("(?<=\^)[^,\"]*")
 collapse_regex = re.compile("{.*}", re.DOTALL)
+
 
 
 def normalize(filename):
@@ -1088,14 +1105,19 @@ class GDBBreakpoint(object):
             self.breakpoint_added(res)
 
     def add(self):
+        global gdb_temp_stop
         if is_running():
+            gdb_temp_stop = True
             res = wait_until_stopped()
             self.insert()
             if res:
                 resume()
 
+
     def remove(self):
+        global gdb_temp_stop
         if is_running():
+            gdb_temp_stop = True
             res = wait_until_stopped()
             run_cmd("-break-delete %s" % self.number)
             if res:
@@ -1264,14 +1286,21 @@ count = 0
 
 def run_cmd(cmd, block=False, mimode=True, timeout=10):
     global count
+    global gdb_windows_bash
+    global sync_check_return_mutex
+    global sync_sending_cmd
+    global gdb_sending_buffer
     if not is_running():
         return "0^error,msg=\"no session running\""
 
-    timeoutcount = timeout/0.001
+    timeout = timeout*1.0
 
     ### handle a list of commands by recursively calling run_cmd
     if isinstance(cmd, list):
         for c in cmd:
+            if gdb_windows_bash and c.find(':/') >= 0:
+                driver_partition = c[c.find(':/')-1]
+                c = c.replace(driver_partition+":/", "/mnt/"+driver_partition+"/")
             run_cmd(c, block, mimode, timeout)
         return count
 
@@ -1280,35 +1309,52 @@ def run_cmd(cmd, block=False, mimode=True, timeout=10):
         cmd = "%d%s\n" % (count, cmd)
     else:
         cmd = "%s\n\n" % cmd
+    if gdb_windows_bash and cmd.find(':/') >= 0:
+        driver_partition = cmd[cmd.find(':/')-1]
+        cmd = cmd.replace(driver_partition+":/", "/mnt/"+driver_partition+"/")
     log_debug(cmd)
     if gdb_session_view is not None:
         gdb_session_view.add_line(cmd, False)
+
+    sync_sending_cmd.acquire()
     gdb_process.stdin.write(cmd.encode(sys.getdefaultencoding()))
     gdb_process.stdin.flush()
+    
     if block:
-        countstr = "%d^" % count
-        i = 0
-        while not gdb_lastresult.startswith(countstr) and i < timeoutcount:
-            i += 1
-            time.sleep(0.001)
-        if i >= timeoutcount:
-            raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
+        start_time = time.time()
+        if gdb_lastresult.find('^') > 0:
+            return_counter = int(gdb_lastresult[:gdb_lastresult.find('^')])
+        else:
+            return_counter = 0
+        while return_counter < count:
+            with sync_check_return_mutex:
+                sync_check_return_mutex.wait(timeout)
+
+                if gdb_lastresult.find('^') > 0:
+                    return_counter = int(gdb_lastresult[:gdb_lastresult.find('^')])
+                else:
+                    return_counter = 0
+
+                elapsed_time = time.time() - start_time
+                if return_counter < count and elapsed_time >= timeout:
+                    raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
+        sync_sending_cmd.release()
         return gdb_lastresult
+    sync_sending_cmd.release()
     return count
 
 
 def wait_until_stopped():
+    global sync_status_mutex
+    global gdb_run_status
     if gdb_run_status == "running":
-        result = run_cmd("-exec-interrupt --all", True)
-        if "^done" in result:
-            i = 0
-            while not "stopped" in gdb_run_status and i < 100:
-                i = i + 1
-                time.sleep(0.1)
-            if i >= 100:
-                print("I'm confused... I think status is %s, but it seems it wasn't..." % gdb_run_status)
-                return False
-            return True
+        command_to_kill = "bash -c \"kill -2 %d\""%gdb_pid
+        subprocess.check_output(command_to_kill)
+        while gdb_run_status != "stopped":
+            time.sleep(0.1)
+        #result = run_cmd("-exec-interrupt --all", True)
+        #if "^done" in result:
+        return True
     return False
 
 
@@ -1386,6 +1432,10 @@ def gdboutput(pipe):
     global gdb_stack_frame
     global gdb_run_status
     global gdb_stack_index
+    global gdb_windows_bash
+    global sync_check_return_mutex
+    global gdb_pid
+    global gdb_temp_stop
     command_result_regex = re.compile("^\d+\^")
     run_status_regex = re.compile("(^\d*\*)([^,]+)")
 
@@ -1396,9 +1446,12 @@ def gdboutput(pipe):
                 log_debug("gdb_%s: broken pipe\n" % ("stdout" if pipe == gdb_process.stdout else "stderr"))
                 break
             line = line.strip().decode(sys.getdefaultencoding())
+            # transform linux file system to windows again
+            if gdb_windows_bash and line.find('/mnt/') >= 0:
+                driver_partition = line[line.find('/mnt/')+5]
+                line = line.replace('/mnt/'+driver_partition,driver_partition+':')
             log_debug("gdb_%s: %s\n" % ("stdout" if pipe == gdb_process.stdout else "stderr", line))
             gdb_session_view.add_line("%s\n" % line, False)
-
             if pipe != gdb_process.stdout:
                 continue
 
@@ -1409,20 +1462,33 @@ def gdboutput(pipe):
                 if reason is not None and reason.group(0).startswith("exited"):
                     log_debug("gdb: exiting %s" % line)
                     run_cmd("-gdb-exit")
-                elif not "running" in gdb_run_status and not gdb_shutting_down:
+                elif not "running" in gdb_run_status and not gdb_shutting_down and not gdb_temp_stop:
                     thread_id = re.search('thread-id="(\d+)"', line)
                     if thread_id is not None:
                         gdb_threads_view.select_thread(int(thread_id.group(1)))
                     sublime.set_timeout(update_cursor, 0)
+                elif gdb_temp_stop:
+                    gdb_temp_stop = False
             if not line.startswith("(gdb)"):
                 gdb_lastline = line
             if command_result_regex.match(line) is not None:
                 gdb_lastresult = line
+            
+            with sync_check_return_mutex:
+                sync_check_return_mutex.notifyAll()
 
             if line.startswith("~"):
                 gdb_console_view.add_line(
                     line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t"), False)
+            
+            if line.startswith("=thread") and line.find("pid=") >= 0:
+                pid_start_num = line.find("pid=") + 5
+                pid_end_num = line.find("\"",pid_start_num)
+                gdb_pid = int(line[pid_start_num:pid_end_num])
 
+            if line.startswith("=thread-group-exited"):
+                log_debug("gdb: exiting...\n")
+                break
         except:
             traceback.print_exc()
     if pipe == gdb_process.stdout:
@@ -1430,15 +1496,15 @@ def gdboutput(pipe):
         gdb_session_view.add_line("GDB session ended\n")
         sublime.set_timeout(session_ended_status_message, 0)
         gdb_stack_frame = None
+        for view in gdb_views:
+            sublime.set_timeout(view.on_session_ended, 0)
+        sublime.set_timeout(cleanup, 0)
     global gdb_cursor_position
     gdb_stack_index = -1
     gdb_cursor_position = 0
     gdb_run_status = None
     sublime.set_timeout(update_view_markers, 0)
 
-    for view in gdb_views:
-        sublime.set_timeout(view.on_session_ended, 0)
-    sublime.set_timeout(cleanup, 0)
 
 def cleanup():
     global __debug_file_handle
@@ -1587,6 +1653,7 @@ class GdbInput(sublime_plugin.WindowCommand):
 class GdbLaunch(sublime_plugin.WindowCommand):
     def run(self):
         global exec_settings
+        global gdb_windows_bash
         s = self.window.active_view().settings()
         exec_choices = s.get("sublimegdb_executables")
 
@@ -1615,8 +1682,11 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         global gdb_bkp_view
         global gdb_bkp_layout
         global gdb_shutting_down
+        global gdb_windows_bash
         global DEBUG
         global DEBUG_FILE
+        global gdb_break_loops
+        gdb_break_loops = False
         view = self.window.active_view()
         DEBUG = get_setting("debug", False, view)
         DEBUG_FILE = expand_path(get_setting("debug_file", "stdout", view), self.window)
@@ -1651,6 +1721,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
                 return
 
             # get env settings
+            gdb_windows_bash = get_setting("windows_bash_compatibility")
             gdb_env = get_setting("env", "notset")
             if gdb_env == "notset":
                 gdb_env = None
@@ -1699,30 +1770,31 @@ class GdbLaunch(sublime_plugin.WindowCommand):
 
             gdb_shutting_down = False
 
-            t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
-            t.start()
-            t = threading.Thread(target=gdboutput, args=(gdb_process.stderr,))
-            t.start()
+            t1 = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
+            t1.start()
+            t2 = threading.Thread(target=gdboutput, args=(gdb_process.stderr,))
+            t2.start()
 
-            try:
-                raise Exception("Nope")
-                pty, tty = os.openpty()
-                name = os.ttyname(tty)
-            except:
-                pipe, name = tempfile.mkstemp()
-                pty, tty = pipe, None
-            log_debug("pty: %s, tty: %s, name: %s" % (pty, tty, name))
-            t = threading.Thread(target=programio, args=(pty,tty))
-            t.start()
-            try:
-                run_cmd("-gdb-show interpreter", True, timeout=get_setting("gdb_timeout", 20))
-            except:
-                sublime.error_message("""\
-It seems you're not running gdb with the "mi" interpreter. Please add
-"--interpreter=mi" to your gdb command line""")
-                gdb_process.stdin.write("quit\n")
-                return
-            run_cmd("-inferior-tty-set %s" % name, True)
+            if gdb_windows_bash == False:
+                try:
+                    raise Exception("Nope")
+                    pty, tty = os.openpty()
+                    name = os.ttyname(tty)
+                except:
+                    pipe, name = tempfile.mkstemp()
+                    pty, tty = pipe, None
+                log_debug("pty: %s, tty: %s, name: %s" % (pty, tty, name))
+                t3 = threading.Thread(target=programio, args=(pty,tty))
+                t3.start()
+                try:
+                    run_cmd("-gdb-show interpreter", True, timeout=get_setting("gdb_timeout", 20))
+                except:
+                    sublime.error_message("""\
+    It seems you're not running gdb with the "mi" interpreter. Please add
+    "--interpreter=mi" to your gdb command line""")
+                    gdb_process.stdin.write("quit\n")
+                    return
+                run_cmd("-inferior-tty-set %s" % name, True)
 
             run_cmd("-enable-pretty-printing")
             run_cmd("-gdb-set target-async 1")
@@ -1777,11 +1849,14 @@ class GdbContinue(sublime_plugin.WindowCommand):
 class GdbExit(sublime_plugin.WindowCommand):
     def run(self):
         global gdb_shutting_down
+        global gdb_bkp_layout
         gdb_shutting_down = True
         wait_until_stopped()
         run_cmd("-gdb-exit", True)
         if gdb_server_process:
             gdb_server_process.terminate()
+        gdb_process.kill()
+        gdb_bkp_window.set_layout(gdb_bkp_layout)
 
     def is_enabled(self):
         return is_running()
@@ -1801,7 +1876,14 @@ class GdbLoad(sublime_plugin.WindowCommand):
 
 class GdbPause(sublime_plugin.WindowCommand):
     def run(self):
-        run_cmd("-exec-interrupt")
+        global gdb_run_status
+        #run_cmd("-exec-interrupt")
+        
+        if gdb_run_status == "running":
+            command_to_kill = "bash -c \"kill -2 %d\""%gdb_pid
+            subprocess.check_output(command_to_kill)
+            while gdb_run_status != "stopped":
+                time.sleep(0.1)
 
     def is_enabled(self):
         return is_running() and gdb_run_status != "stopped"
