@@ -78,6 +78,9 @@
     // "commandline": "gdb --interpreter=mi ./executable",
     "commandline": "notset",
 
+    // NOTE: This line provides compatibilijty with the windows Subsystem do Linux (WLS) - bash
+    "windows_bash_compatibility": false,
+        
     // Environments for running gdb and gdb server
     // Example: "env": {"DISPLAY": ":100"}
     "env": "notset",
