@@ -140,6 +140,7 @@ gdb_python_command_running = False
 gdb_shutting_down = False
 gdb_process = None
 gdb_server_process = None
+gdb_threads = []
 gdb_stack_frame = None
 gdb_stack_index = 0
 
@@ -1659,6 +1660,13 @@ def gdboutput(pipe):
 
 def cleanup():
     global __debug_file_handle
+    global gdb_threads
+
+    # make sure all our threads are done
+    for t in gdb_threads:
+        t.join(get_setting("gdb_timeout", 20))
+    gdb_threads = []
+
     if get_setting("close_views", True):
         for view in gdb_views:
             view.close()
@@ -1827,6 +1835,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
     def launch(self):
         global gdb_process
         global gdb_server_process
+        global gdb_threads
         global gdb_run_status
         global gdb_bkp_window
         global gdb_bkp_view
@@ -1918,8 +1927,10 @@ class GdbLaunch(sublime_plugin.WindowCommand):
 
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
+            gdb_threads.append(t)
             t = threading.Thread(target=gdboutput, args=(gdb_process.stderr,))
             t.start()
+            gdb_threads.append(t)
 
             try:
                 raise Exception("Nope")
@@ -1931,6 +1942,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
             log_debug("pty: %s, tty: %s, name: %s" % (pty, tty, name))
             t = threading.Thread(target=programio, args=(pty,tty))
             t.start()
+            gdb_threads.append(t)
             try:
                 run_cmd("-gdb-show interpreter", True, timeout=get_setting("gdb_timeout", 20))
             except:
