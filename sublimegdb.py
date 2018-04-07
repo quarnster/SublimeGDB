@@ -1660,12 +1660,17 @@ def gdboutput(pipe):
 
 def cleanup():
     global __debug_file_handle
+    global gdb_process
     global gdb_threads
 
     # make sure all our threads are done
     for t in gdb_threads:
         t.join(get_setting("gdb_timeout", 20))
     gdb_threads = []
+
+    # unset the process variable to make sure all pipes and other OS objects are
+    # released (this fixes different freezes when gdb is started multiple times)
+    gdb_process = None
 
     if get_setting("close_views", True):
         for view in gdb_views:
