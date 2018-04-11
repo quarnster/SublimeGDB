@@ -1552,7 +1552,20 @@ def update_cursor():
         gdb_cursor = currFrame["fullname"]
         gdb_cursor_position = int(currFrame["line"])
         sublime.active_window().focus_group(get_setting("file_group", 0))
-        sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
+
+        # If gdb_cursor is not the exact name of an already opened file, Sublime
+        # Text will open a new view. To prevent that, look through all views to
+        # find the file name to use.
+        file_to_open = gdb_cursor
+        try:
+            for view in sublime.active_window().views():
+                if view.file_name():
+                    if os.path.samefile(gdb_cursor, view.file_name()):
+                        file_to_open = view.file_name()
+        except Exception:
+            pass
+
+        sublime.active_window().open_file("%s:%d" % (file_to_open, gdb_cursor_position), sublime.ENCODED_POSITION)
     else:
         gdb_cursor_position = 0
 
