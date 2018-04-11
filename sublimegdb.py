@@ -31,6 +31,7 @@ import traceback
 import os
 import sys
 import re
+from datetime import datetime
 try:
     import Queue
     from resultparser import parse_result_line
@@ -1432,7 +1433,6 @@ def run_cmd(cmd, block=False, mimode=True, timeout=None):
         return "0^error,msg=\"no session running\""
 
     timeout = timeout or get_setting("gdb_command_timeout", 10)
-    timeoutcount = timeout/0.001
 
     ### handle a list of commands by recursively calling run_cmd
     if isinstance(cmd, list):
@@ -1446,17 +1446,18 @@ def run_cmd(cmd, block=False, mimode=True, timeout=None):
     else:
         cmd = "%s\n\n" % cmd
     log_debug(cmd)
+
+    start = datetime.now()
     if gdb_session_view is not None:
         gdb_session_view.add_line(cmd, False)
     gdb_process.stdin.write(cmd.encode(sys.getdefaultencoding()))
     gdb_process.stdin.flush()
     if block:
         countstr = "%d^" % count
-        i = 0
-        while not gdb_lastresult.startswith(countstr) and i < timeoutcount:
-            i += 1
+        while not gdb_lastresult.startswith(countstr) and \
+                (datetime.now() - start).total_seconds() <= timeout:
             time.sleep(0.001)
-        if i >= timeoutcount:
+        if (datetime.now() - start).total_seconds() > timeout:
             raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
         return gdb_lastresult
     return count
@@ -1470,12 +1471,12 @@ def run_python_cmd(cmd, block=False, timeout=None):
         return "0^error,msg=\"no session running\""
 
     timeout = timeout or get_setting("gdb_command_timeout", 10)
-    timeoutcount = timeout/0.001
 
     count = count + 1
     cmd = "%d%s\n" % (count, cmd)
     log_debug(cmd)
 
+    start = datetime.now()
     if gdb_session_view is not None:
         gdb_session_view.add_line(cmd, False)
     gdb_last_console_line = ""
@@ -1485,11 +1486,10 @@ def run_python_cmd(cmd, block=False, timeout=None):
         gdb_python_command_running = True
         try:
             countstr = "%d^" % count
-            i = 0
-            while not gdb_lastresult.startswith(countstr) and i < timeoutcount:
-                i += 1
+            while not gdb_lastresult.startswith(countstr) and \
+                    (datetime.now() - start).total_seconds() <= timeout:
                 time.sleep(0.001)
-            if i >= timeoutcount:
+            if (datetime.now() - start).total_seconds() > timeout:
                 raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
             return gdb_last_console_line
         finally:
