@@ -18,7 +18,7 @@ GDB plugin for Sublime Text 2. Filing issues are not welcome (and thus disabled)
 See [[https://github.com/quarnster/SublimeGDB/blob/master/Default.sublime-keymap|the default key bindings]] and [[https://github.com/quarnster/SublimeGDB/blob/master/Default.sublime-mousemap|the default mouse map]].
 
 In short:
-* Open up the default settings via the command palette and begin typing GDB and select the default.
+* Open up the default settings via the command palette and begin typing SublimeGDB and select the Default SublimeGDB preferences.
 * See what options are available, and open up the User SublimeGDB preferences to tweak any values
 * If you have multiple projects, you most likely want to put project specific setting in your project file, with a prefixed "sublimegdb_". See the comments at the top of the default SublimeGDB preferences for an example.
 * If you have multiple executables in the same project, you can add a "sublimegdb_executables" setting to your project settings, and add an entry for each executable's settings.
