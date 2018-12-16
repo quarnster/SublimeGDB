@@ -32,6 +32,7 @@ import os
 import sys
 import re
 from datetime import datetime
+from functools import partial
 try:
     import Queue
     from resultparser import parse_result_line
@@ -1795,19 +1796,29 @@ class GdbNextCmd(sublime_plugin.TextCommand):
             set_input(edit, "")
 
 
-def show_input():
+def show_input(raw=False):
     global gdb_input_view
     global gdb_command_history_pos
     gdb_command_history_pos = len(gdb_command_history)
-    gdb_input_view = sublime.active_window().show_input_panel("GDB", "", input_on_done, input_on_change, input_on_cancel)
+
+    title = "GDB"
+    if raw:
+        title += " Raw"
+
+    gdb_input_view = sublime.active_window().show_input_panel(
+        title, "",
+        partial(input_on_done, raw=raw),
+        input_on_change,
+        input_on_cancel)
 
 
-
-def input_on_done(s):
+def input_on_done(s, raw=False):
     if s.strip() != "quit":
         gdb_command_history.append(s)
-        show_input()
-    run_cmd(s)
+        show_input(raw=raw)
+
+    mimode = not raw
+    run_cmd(s, mimode=mimode)
 
 
 def input_on_cancel():
@@ -1824,7 +1835,12 @@ def is_running():
 
 class GdbInput(sublime_plugin.WindowCommand):
     def run(self):
-        show_input()
+        show_input(raw=False)
+
+
+class GdbRawInput(sublime_plugin.WindowCommand):
+    def run(self):
+        show_input(raw=True)
 
 
 class GdbLaunch(sublime_plugin.WindowCommand):

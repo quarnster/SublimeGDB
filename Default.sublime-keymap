@@ -25,6 +25,10 @@
         "keys": ["shift+f5"]
     },
     {
+        "command": "gdb_raw_input",
+        "keys": ["ctrl+shift+f5"]
+    },
+    {
         "command": "gdb_toggle_breakpoint",
         "keys": ["f9"]
     },

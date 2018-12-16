@@ -18,6 +18,10 @@
         "command": "gdb_input"
     },
     {
+        "caption": "SublimeGDB: Show Raw Input Field",
+        "command": "gdb_raw_input"
+    },
+    {
         "caption": "SublimeGDB: Start Debugging",
         "command": "gdb_launch"
     },
