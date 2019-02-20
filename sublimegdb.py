@@ -132,7 +132,8 @@ gdb_cursor = ""
 gdb_cursor_position = 0
 gdb_last_cursor_view = None
 gdb_bkp_layout = {}
-gdb_bkp_window = None
+gdb_editor_window = None
+gdb_debugger_window = None
 gdb_bkp_view = None
 
 gdb_shutting_down = False
@@ -150,6 +151,24 @@ gdb_run_status = None
 result_regex = re.compile("(?<=\^)[^,\"]*")
 collapse_regex = re.compile("{.*}", re.DOTALL)
 
+def get_debugger_window():
+    global gdb_debugger_window
+    if(get_setting("debugger_in_separate_window", True)):
+        return gdb_debugger_window
+    else:
+        sublime.active_window()
+
+def get_editor_window():
+    global gdb_editor_window
+    if(get_setting("debugger_in_separate_window", True)):
+        return gdb_editor_window
+    else:
+        sublime.active_window()
+
+def get_group_index_offset():
+    if(get_setting("debugger_in_separate_window", True)):
+        return 1
+    return 0
 
 def normalize(filename):
     if filename is None:
@@ -196,13 +215,13 @@ class GDBView(object):
     def open(self):
         if self.view is None or self.view.window() is None:
             if self.settingsprefix is not None:
-                sublime.active_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0))
+                get_debugger_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0) - get_group_index_offset())
             self.create_view()
 
     def close(self):
         if self.view is not None:
             if self.settingsprefix is not None:
-                sublime.active_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0))
+                get_debugger_window().focus_group(get_setting("%s_group" % self.settingsprefix, 0) - get_group_index_offset())
             self.destroy_view()
 
     def should_update(self):
@@ -259,7 +278,7 @@ class GDBView(object):
                 self.do_clear(None)
 
     def create_view(self):
-        self.view = sublime.active_window().new_file()
+        self.view = get_debugger_window().new_file()
         self.view.set_name(self.name)
         self.view.set_scratch(True)
         self.view.set_read_only(True)
@@ -269,8 +288,8 @@ class GDBView(object):
         self.closed = False
 
     def destroy_view(self):
-        sublime.active_window().focus_view(self.view)
-        sublime.active_window().run_command("close")
+        get_debugger_window().focus_view(self.view)
+        get_debugger_window().run_command("close")
         self.view = None
         self.closed = True
 
@@ -419,7 +438,7 @@ class GDBVariable:
         return None
 
     def edit(self):
-        sublime.active_window().show_input_panel("%s =" % self["exp"], self.valuepair["value"], self.edit_on_done, None, None)
+        get_debugger_window().show_input_panel("%s =" % self["exp"], self.valuepair["value"], self.edit_on_done, None, None)
 
     def get_name(self):
         return self.valuepair["name"]
@@ -552,7 +571,7 @@ class GDBRegister:
         gdb_register_view.update_values()
 
     def edit(self):
-        sublime.active_window().show_input_panel("$%s =" % self.name, self.value, self.edit_on_done, None, None)
+        get_debugger_window().show_input_panel("$%s =" % self.name, self.value, self.edit_on_done, None, None)
 
 
 class GDBRegisterView(GDBView):
@@ -1238,7 +1257,7 @@ gdb_views = [gdb_session_view, gdb_console_view, gdb_variables_view, gdb_callsta
 
 def update_view_markers(view=None):
     if view is None:
-        view = sublime.active_window().active_view()
+        view = get_editor_window().active_view()
 
     fn = view.file_name()
     if fn is not None:
@@ -1351,8 +1370,8 @@ def update_cursor():
     if "fullname" in currFrame:
         gdb_cursor = currFrame["fullname"]
         gdb_cursor_position = int(currFrame["line"])
-        sublime.active_window().focus_group(get_setting("file_group", 0))
-        sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
+        get_editor_window().focus_group(get_setting("file_group", 0))
+        get_editor_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
     else:
         gdb_cursor_position = 0
 
@@ -1446,8 +1465,10 @@ def cleanup():
         for view in gdb_views:
             view.close()
     if get_setting("push_pop_layout", True):
-        gdb_bkp_window.set_layout(gdb_bkp_layout)
-        gdb_bkp_window.focus_view(gdb_bkp_view)
+        gdb_editor_window.set_layout(gdb_bkp_layout)
+        gdb_editor_window.focus_view(gdb_bkp_view)
+        if(get_setting("debugger_in_separate_window", True)):
+            get_debugger_window().run_command("close")
     if __debug_file_handle is not None:
         if __debug_file_handle != sys.stdout:
             __debug_file_handle.close()
@@ -1611,7 +1632,8 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         global gdb_process
         global gdb_server_process
         global gdb_run_status
-        global gdb_bkp_window
+        global gdb_debugger_window
+        global gdb_editor_window
         global gdb_bkp_view
         global gdb_bkp_layout
         global gdb_shutting_down
@@ -1677,20 +1699,46 @@ class GdbLaunch(sublime_plugin.WindowCommand):
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             log_debug("Process: %s\n" % gdb_process)
-            gdb_bkp_window = sublime.active_window()
+            gdb_editor_window = sublime.active_window()
+            if(get_setting("debugger_in_separate_window", True)):
+                sublime.run_command("new_window")
+            gdb_debugger_window = sublime.active_window()
             #back up current layout before opening the debug one
             #it will be restored when debug is finished
-            gdb_bkp_layout = gdb_bkp_window.get_layout()
-            gdb_bkp_view = gdb_bkp_window.active_view()
-            gdb_bkp_window.set_layout(
-                get_setting("layout",
-                    {
-                        "cols": [0.0, 0.5, 1.0],
-                        "rows": [0.0, 0.75, 1.0],
-                        "cells": [[0, 0, 2, 1], [0, 1, 1, 2], [1, 1, 2, 2]]
-                    }
+            gdb_bkp_layout = gdb_debugger_window.get_layout()
+            gdb_bkp_view = gdb_debugger_window.active_view()
+            
+            if(get_setting("debugger_in_separate_window", True)):
+                gdb_debugger_window.set_layout(
+                    get_setting("separate_window_layout",
+                        { 
+                            "cols": [0.0, 0.33, 0.66, 1.0],
+                            "rows": [0.0, 1.0],
+                            "cells":
+                            [
+                                [0, 0, 1, 1],
+                                [1, 0, 2, 1],
+                                [2, 0, 3, 1]
+                            ]
+                        }
+                    )
                 )
-            )
+            else:
+                gdb_debugger_window.set_layout(
+                    get_setting("layout",
+                        {        
+                            "cols": [0.0, 0.33, 0.66, 1.0],
+                            "rows": [0.0, 0.75, 1.0],
+                            "cells":
+                            [ # c1 r1 c2 r2
+                                [0, 0, 3, 1], # -> (0.00, 0.00), (1.00, 0.75)
+                                [0, 1, 1, 2], # -> (0.00, 0.75), (0.33, 1.00)
+                                [1, 1, 2, 2], # -> (0.33, 0.75), (0.66, 1.00)
+                                [2, 1, 3, 2]  # -> (0.66, 0.75), (1.00, 1.00)
+                            ]
+                        }
+                    )
+                )
 
             for view in gdb_views:
                 if view.is_closed() and view.open_at_start():

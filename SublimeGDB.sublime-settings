@@ -137,6 +137,20 @@
         ]
     },
 
+    "debugger_in_separate_window": true,
+
+    "separate_window_layout":
+    {
+        "cols": [0.0, 0.33, 0.66, 1.0],
+        "rows": [0.0, 1.0],
+        "cells":
+        [ // c1 r1 c2 r2
+            [0, 0, 1, 1], // -> (0.00, 0.0), (0.33, 1.00)
+            [1, 0, 2, 1], // -> (0.33, 0.0), (0.66, 1.00)
+            [2, 0, 3, 1]  // -> (0.66, 0.0), (1.00, 1.00)
+        ]
+    },
+
     // visual stuff
     "breakpoint_scope": "keyword.gdb",
     "breakpoint_icon": "circle",
