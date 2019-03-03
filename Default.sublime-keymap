@@ -29,6 +29,11 @@
         "keys": ["f9"]
     },
     {
+        "command": "gdb_open_global_variable_panel",
+        "context": [{"key": "gdb_running", "operator": "equal", "operand": true}],
+        "keys": ["ctrl+f9"]
+    },
+    {
         "command": "gdb_launch",
         "context": [{"key": "gdb_running", "operator": "equal", "operand": false}],
         "keys": ["f5"]
