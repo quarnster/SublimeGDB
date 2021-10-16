@@ -2011,6 +2011,9 @@ It seems you're not running gdb with the "mi" interpreter. Please add
             else:
                 gdb_run_status = "stopped"
 
+            if(get_setting("enable_pretty_printing", True)):
+                run_cmd("-enable-pretty-printing")
+            
 
             show_input()
         else:
