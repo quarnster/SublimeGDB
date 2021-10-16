@@ -31,6 +31,8 @@ import traceback
 import os
 import sys
 import re
+from datetime import datetime
+from functools import partial
 try:
     import Queue
     from resultparser import parse_result_line
@@ -128,6 +130,7 @@ __debug_file_handle = None
 
 gdb_lastresult = ""
 gdb_lastline = ""
+gdb_last_console_line = ""
 gdb_cursor = ""
 gdb_cursor_position = 0
 gdb_last_cursor_view = None
@@ -135,9 +138,11 @@ gdb_bkp_layout = {}
 gdb_bkp_window = None
 gdb_bkp_view = None
 
+gdb_python_command_running = False
 gdb_shutting_down = False
 gdb_process = None
 gdb_server_process = None
+gdb_threads = []
 gdb_stack_frame = None
 gdb_stack_index = 0
 
@@ -263,6 +268,7 @@ class GDBView(object):
         self.view.set_name(self.name)
         self.view.set_scratch(True)
         self.view.set_read_only(True)
+        self.view.settings().set("scroll_past_end", False)
         # Setting command_mode to false so that vintage
         # does not eat the "enter" keybinding
         self.view.settings().set('command_mode', False)
@@ -299,6 +305,10 @@ class GDBView(object):
     def do_scroll(self, data):
         self.view.run_command("goto_line", {"line": data + 1})
 
+    def do_move_to_eof(self):
+        if self.view:
+            self.view.run_command("move_to", { "to": "eof", "extend": False })
+
     def do_set_viewport_position(self, data):
         # Shouldn't have to call viewport_extent, but it
         # seems to flush whatever value is stale so that
@@ -321,6 +331,13 @@ class GDBView(object):
         except:
             traceback.print_exc()
 
+    def on_activated(self):
+        # scroll to the end of the view on first activation
+        if self.doScroll and self.view.visible_region().empty():
+            # need a timeout because apparently a view can't be scrolled until
+            # it has been fully activated once
+            sublime.set_timeout(self.do_move_to_eof, 20)
+
     def on_session_ended(self):
         if get_setting("%s_clear_on_end" % self.settingsprefix, True):
             self.clear()
@@ -334,11 +351,15 @@ class GdbViewClear(sublime_plugin.TextCommand):
 
 class GdbViewAddLine(sublime_plugin.TextCommand):
     def run(self, edit, line, doScroll):
-        self.view.set_read_only(False)
-        self.view.insert(edit, self.view.size(), line)
-        self.view.set_read_only(True)
-        if doScroll:
-            self.view.show(self.view.size())
+        # force a scroll to the end if the last line is currently visible
+        force_scroll = False
+        if doScroll and self.view.visible_region().contains(self.view.size()):
+            force_scroll = True
+
+        self.view.run_command("append", { "characters": line, "force": True })
+
+        if force_scroll:
+            self.view.run_command("move_to", { "to": "eof", "extend": False })
 
 class GDBVariable:
     def __init__(self, vp=None, parent=None):
@@ -368,8 +389,29 @@ class GDBVariable:
                     self["numchild"] = d[key]
                 else:
                     self[key[4:]] = d[key]
-            elif key == "value":
+            else:
                 self[key] = d[key]
+        if (('dynamic' in self) and ('dynamic' not in d)):
+            del self['dynamic']
+
+    def is_existing(self):
+        # if there is a parent this variable should be existing
+        if self.parent:
+            return True
+
+        # try to find the line where this variable was declared
+        output = run_python_cmd("python print(gdb.lookup_symbol(\"%s\")[0].line)" % self["exp"], True)
+        try:
+            line = int(output)
+
+            # if the cursor is after this position the variable should be
+            # existing
+            if gdb_cursor_position > line:
+                return True
+        except:
+            pass
+
+        return False
 
     def get_expression(self):
         expression = ""
@@ -425,22 +467,37 @@ class GDBVariable:
         return self.valuepair["name"]
 
     def expand(self):
-        self.is_expanded = True
-        if not (len(self.children) == 0 and int(self.valuepair["numchild"]) > 0):
+        if not self.is_existing():
             return
-        self.add_children(self.get_name())
+
+        self.is_expanded = True
+        if ((not self.children) and self.has_children()):
+            self.add_children(self.get_name())
 
     def has_children(self):
-        return int(self.valuepair["numchild"]) > 0
+        if (int(self["numchild"]) > 0 or
+                (self.is_dynamic and int(self.valuepair.get("has_more", 0)) > 0)):
+            return True
+
+        # for dynamic child variables the has_more field is not available so we
+        # have to actually list the children to find out if there are any
+        if self.is_dynamic and self.is_existing():
+            children = parse_result_line(run_cmd("-var-list-children \"%s\"" % self.get_name(), True))
+            return int(children["numchild"]) > 0
+
+        return False
 
     def collapse(self):
         self.is_expanded = False
 
     def __str__(self):
+        # apply the user-defined filters to the type
+        type = self.filter_type(self['type'])
+
         if not "dynamic_type" in self or len(self['dynamic_type']) == 0 or self['dynamic_type'] == self['type']:
-            return "%s %s = %s" % (self['type'], self['exp'], self['value'])
+            return "%s %s = %s" % (type, self['exp'], self['value'])
         else:
-            return "%s %s = (%s) %s" % (self['type'], self['exp'], self['dynamic_type'], self['value'])
+            return "%s %s = (%s) %s" % (type, self['exp'], self['dynamic_type'], self['value'])
 
     def __iter__(self):
         return self.valuepair.__iter__()
@@ -452,6 +509,27 @@ class GDBVariable:
         self.valuepair[key] = value
         if key == "value":
             self.dirty = True
+
+    @property
+    def is_dynamic(self):
+        return ('dynamic' in self)
+
+    def update_from(self, var):
+        if (var.is_expanded):
+            self.expand()
+            for child in self.children:
+                otherChild = var.find_child_expression(child["exp"])
+                if (otherChild):
+                    child.update_from(otherChild)
+                else:
+                    child.dirty = True
+        self.dirty = (self["value"] != var["value"])
+
+    def find_child_expression(self, exp):
+        for child in self.children:
+            if (child["exp"] == exp):
+                return child
+        return None
 
     def clear_dirty(self):
         self.dirty = False
@@ -485,6 +563,23 @@ class GDBVariable:
         if self.is_dirty():
             dirty.append(self)
         return (output, line)
+
+    @staticmethod
+    def filter_type(type):
+        # use the regex module instead of re if available
+        sub = re.sub
+        try:
+            import regex
+            sub = regex.sub
+        except:
+            pass
+
+        # apply all user-defined filters
+        filters = get_setting("type_filters", [], gdb_variables_view)
+        for f in filters:
+            type = sub(f["pattern"], f["replace"], type)
+
+        return type
 
 def qtod(q):
     val = struct.pack("Q", q)
@@ -673,11 +768,11 @@ class GDBVariablesView(GDBView):
         if v:
             self.variables.append(v)
 
-    def create_variable(self, exp):
+    def create_variable(self, exp, show_error = True):
         line = run_cmd("-var-create - * %s" % exp, True)
-        if get_result(line) == "error" and "&" in exp:
+        if get_result(line, False) == "error" and "&" in exp:
             line = run_cmd("-var-create - * %s" % exp.replace("&", ""), True)
-        if get_result(line) == "error":
+        if get_result(line, show_error) == "error":
             return None
         var = parse_result_line(line)
         var['exp'] = exp
@@ -687,8 +782,18 @@ class GDBVariablesView(GDBView):
         if not self.should_update():
             return
         if sameFrame:
-            for var in self.variables:
-                var.clear_dirty()
+            variables = []
+            for var in self.variables:    # completely replace dynamic variables because we don't always get proper update notifications
+                if (var.is_dynamic):
+                    var.delete()
+                    newVar = self.create_variable(var['exp'], False)
+                    if (newVar):    # may have gone out of scope without notification
+                        newVar.update_from(var)
+                        variables.append(newVar)
+                else:
+                    var.clear_dirty()
+                    variables.append(var)
+            self.variables = variables
             ret = parse_result_line(run_cmd("-var-update --all-values *", True))["changelist"]
             if "varobj" in ret:
                 ret = listify(ret["varobj"])
@@ -697,14 +802,15 @@ class GDBVariablesView(GDBView):
                 name = value["name"]
                 for var in self.variables:
                     real = var.find(name)
-                    if real is not None:
+                    if (real is not None):
                         if  "in_scope" in value and value["in_scope"] == "false":
                             real.delete()
                             dellist.append(real)
                             continue
-                        real.update(value)
-                        if not "value" in value and not "new_value" in value:
-                            real.update_value()
+                        if (not real.is_dynamic):
+                            real.update(value)
+                            if not "value" in value and not "new_value" in value:
+                                real.update_value()
                         break
             for item in dellist:
                 self.variables.remove(item)
@@ -914,7 +1020,7 @@ class GDBThreadsView(GDBView):
                             if "value" in arg:
                                 args += " = " + arg["value"]
                     func = "%s(%s);" % (func, args)
-                print("thread %s" % thread)
+                log_debug("thread %s" % thread)
                 self.threads.append(GDBThread(int(thread["id"]), thread["state"], func, thread.get("details")))
 
         if "current-thread-id" in ids:
@@ -1023,11 +1129,14 @@ class GDBBreakpoint(object):
         self.original_filename = normalize(filename)
         self.original_line = line
         self.addr = addr
+        self.modified_line = None
         self.clear()
         self.add()
 
     @property
     def line(self):
+        if self.modified_line:
+            return self.modified_line
         if self.number != -1:
             return self.resolved_line
         return self.original_line
@@ -1043,10 +1152,17 @@ class GDBBreakpoint(object):
         self.resolved_line = 0
         self.number = -1
 
+        if self.modified_line and not is_running():
+            # the next GDB runs we will use the modified line
+            self.original_line = self.modified_line
+            self.modified_line = None
+
     def breakpoint_added(self, res):
         if "bkpt" not in res:
             return
         bp = res["bkpt"]
+        if isinstance(bp, list): # choose the last of multiple entries
+            bp = bp[-1]
         if "fullname" in bp:
             self.resolved_filename = bp["fullname"]
         elif "file" in bp:
@@ -1060,7 +1176,7 @@ class GDBBreakpoint(object):
 
         if not "/" in self.resolved_filename and not "\\" in self.resolved_filename:
             self.resolved_filename = self.original_filename
-        self.number = int(bp["number"])
+        self.number = int(bp["number"].split(".")[0])
 
     def insert(self):
         # TODO: does removing the unicode-escape break things? what's the proper way to handle this in python3?
@@ -1139,6 +1255,49 @@ class GDBBreakpointView(GDBView):
         for bkpt in self.breakpoints:
             bkpt.clear()
 
+    def on_view_modified(self, view):
+        if not self.breakpoints:
+            return
+
+        fn = view.file_name()
+        if fn is None:
+            return
+        fn = normalize(fn)
+
+        # use the modified regions to update the breakpoint locations
+        cur_regions = view.get_regions("sublimegdb.breakpoints")
+
+        # list of breakpoints with a line for this view
+        bkpts = []
+        for bkpt in self.breakpoints:
+            if bkpt.filename == fn and bkpt.addr == "":
+                bkpts.append(bkpt)
+
+        # sorting the breakpoints by their last region brings them into the same
+        # order as the current regions
+        cur_regions.sort()
+        bkpts.sort(key=lambda bkpt: bkpt.last_region)
+
+        need_update = False
+        for region, bkpt in zip(cur_regions, bkpts):
+            # if the current region's line and the breakpoint's differ we need
+            # to update it
+            new_line = view.rowcol(region.begin())[0] + 1
+            if new_line != bkpt.original_line:
+                if not is_running():
+                    bkpt.original_line = new_line
+                else:
+                    # this will only update the visible location of the
+                    # breakpoint but GDB will still stop at the original
+                    # location
+                    bkpt.modified_line = new_line
+
+                need_update = True
+
+        if need_update:
+            self.update_marker(view)
+            self.update_view()
+
     def update_marker(self, view):
         bps = []
         fn = view.file_name()
@@ -1146,8 +1305,15 @@ class GDBBreakpointView(GDBView):
             return
         fn = normalize(fn)
         for bkpt in self.breakpoints:
-            if bkpt.filename == fn and not (bkpt.line == gdb_cursor_position and fn == gdb_cursor):
-                bps.append(view.full_line(view.text_point(bkpt.line - 1, 0)))
+            # also add one for the current cursor position to allow updating the
+            # breakpoints when the view is modified
+            if bkpt.filename == fn:
+                region = view.full_line(view.text_point(bkpt.line - 1, 0))
+
+                # save this region  so that we can determine if it moved
+                bkpt.last_region = region
+
+                bps.append(region)
 
         view.add_regions("sublimegdb.breakpoints", bps,
                             get_setting("breakpoint_scope", "keyword.gdb"),
@@ -1210,7 +1376,7 @@ class GDBBreakpointView(GDBView):
             return
         pos = self.get_view().viewport_position()
         self.clear()
-        self.breakpoints.sort(key=lambda b: (b.number, b.filename, b.line))
+        self.breakpoints.sort(key=lambda b: (b.number, b.filename or "", b.line))
         for bkpt in self.breakpoints:
             self.add_line(bkpt.format())
         self.set_viewport_position(pos)
@@ -1219,7 +1385,7 @@ class GDBBreakpointView(GDBView):
 
 class GDBSessionView(GDBView):
     def __init__(self):
-        super(GDBSessionView, self).__init__("GDB Session", s=False, settingsprefix="session")
+        super(GDBSessionView, self).__init__("GDB Session", s=True, settingsprefix="session")
 
     def open(self):
         super(GDBSessionView, self).open()
@@ -1227,7 +1393,7 @@ class GDBSessionView(GDBView):
 
 
 gdb_session_view = GDBSessionView()
-gdb_console_view = GDBView("GDB Console", settingsprefix="console")
+gdb_console_view = GDBView("GDB Console", s=True, settingsprefix="console")
 gdb_variables_view = GDBVariablesView()
 gdb_callstack_view = GDBCallstackView()
 gdb_register_view = GDBRegisterView()
@@ -1262,12 +1428,12 @@ def update_view_markers(view=None):
 count = 0
 
 
-def run_cmd(cmd, block=False, mimode=True, timeout=10):
+def run_cmd(cmd, block=False, mimode=True, timeout=None):
     global count
     if not is_running():
         return "0^error,msg=\"no session running\""
 
-    timeoutcount = timeout/0.001
+    timeout = timeout or get_setting("gdb_command_timeout", 10)
 
     ### handle a list of commands by recursively calling run_cmd
     if isinstance(cmd, list):
@@ -1281,19 +1447,54 @@ def run_cmd(cmd, block=False, mimode=True, timeout=10):
     else:
         cmd = "%s\n\n" % cmd
     log_debug(cmd)
+
+    start = datetime.now()
     if gdb_session_view is not None:
         gdb_session_view.add_line(cmd, False)
     gdb_process.stdin.write(cmd.encode(sys.getdefaultencoding()))
     gdb_process.stdin.flush()
     if block:
         countstr = "%d^" % count
-        i = 0
-        while not gdb_lastresult.startswith(countstr) and i < timeoutcount:
-            i += 1
+        while not gdb_lastresult.startswith(countstr) and \
+                (datetime.now() - start).total_seconds() <= timeout:
             time.sleep(0.001)
-        if i >= timeoutcount:
+        if (datetime.now() - start).total_seconds() > timeout:
             raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
         return gdb_lastresult
+    return count
+
+
+def run_python_cmd(cmd, block=False, timeout=None):
+    global count
+    global gdb_python_command_running
+    global gdb_last_console_line
+    if not is_running():
+        return "0^error,msg=\"no session running\""
+
+    timeout = timeout or get_setting("gdb_command_timeout", 10)
+
+    count = count + 1
+    cmd = "%d%s\n" % (count, cmd)
+    log_debug(cmd)
+
+    start = datetime.now()
+    if gdb_session_view is not None:
+        gdb_session_view.add_line(cmd, False)
+    gdb_last_console_line = ""
+    gdb_process.stdin.write(cmd.encode(sys.getdefaultencoding()))
+    gdb_process.stdin.flush()
+    if block:
+        gdb_python_command_running = True
+        try:
+            countstr = "%d^" % count
+            while not gdb_lastresult.startswith(countstr) and \
+                    (datetime.now() - start).total_seconds() <= timeout:
+                time.sleep(0.001)
+            if (datetime.now() - start).total_seconds() > timeout:
+                raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
+            return gdb_last_console_line
+        finally:
+            gdb_python_command_running = False
     return count
 
 
@@ -1306,7 +1507,7 @@ def wait_until_stopped():
                 i = i + 1
                 time.sleep(0.1)
             if i >= 100:
-                print("I'm confused... I think status is %s, but it seems it wasn't..." % gdb_run_status)
+                log_debug("I'm confused... I think status is %s, but it seems it wasn't..." % gdb_run_status)
                 return False
             return True
     return False
@@ -1318,9 +1519,9 @@ def resume():
     run_cmd("-exec-continue", True)
 
 
-def get_result(line):
+def get_result(line, show_error = True):
     res = result_regex.search(line).group(0)
-    if res == "error" and not get_setting("i_know_how_to_use_gdb_thank_you_very_much", False):
+    if show_error and res == "error" and not get_setting("i_know_how_to_use_gdb_thank_you_very_much", False):
         sublime.error_message("%s\n\n%s" % (line, "\n".join(traceback.format_stack())))
     return res
 
@@ -1343,7 +1544,7 @@ def update_cursor():
     res = run_cmd("-stack-info-frame", True)
     if get_result(res) == "error":
         if gdb_run_status != "running":
-            print("run_status is %s, but got error: %s" % (gdb_run_status, res))
+            log_debug("run_status is %s, but got error: %s" % (gdb_run_status, res))
             return
     currFrame = parse_result_line(res)["frame"]
     gdb_stack_index = int(currFrame["level"])
@@ -1352,7 +1553,20 @@ def update_cursor():
         gdb_cursor = currFrame["fullname"]
         gdb_cursor_position = int(currFrame["line"])
         sublime.active_window().focus_group(get_setting("file_group", 0))
-        sublime.active_window().open_file("%s:%d" % (gdb_cursor, gdb_cursor_position), sublime.ENCODED_POSITION)
+
+        # If gdb_cursor is not the exact name of an already opened file, Sublime
+        # Text will open a new view. To prevent that, look through all views to
+        # find the file name to use.
+        file_to_open = gdb_cursor
+        try:
+            for view in sublime.active_window().views():
+                if view.file_name():
+                    if os.path.samefile(gdb_cursor, view.file_name()):
+                        file_to_open = view.file_name()
+        except Exception:
+            pass
+
+        sublime.active_window().open_file("%s:%d" % (file_to_open, gdb_cursor_position), sublime.ENCODED_POSITION)
     else:
         gdb_cursor_position = 0
 
@@ -1383,6 +1597,7 @@ def gdboutput(pipe):
     global gdb_process
     global gdb_lastresult
     global gdb_lastline
+    global gdb_last_console_line
     global gdb_stack_frame
     global gdb_run_status
     global gdb_stack_index
@@ -1391,11 +1606,11 @@ def gdboutput(pipe):
 
     while True:
         try:
-            line = pipe.readline()
-            if len(line) == 0:
+            raw = pipe.readline()
+            if len(raw) == 0:
                 log_debug("gdb_%s: broken pipe\n" % ("stdout" if pipe == gdb_process.stdout else "stderr"))
                 break
-            line = line.strip().decode(sys.getdefaultencoding())
+            line = raw.strip().decode(sys.getdefaultencoding())
             log_debug("gdb_%s: %s\n" % ("stdout" if pipe == gdb_process.stdout else "stderr", line))
             gdb_session_view.add_line("%s\n" % line, False)
 
@@ -1420,8 +1635,25 @@ def gdboutput(pipe):
                 gdb_lastresult = line
 
             if line.startswith("~"):
-                gdb_console_view.add_line(
-                    line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t"), False)
+                console_line = line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t")
+                if not gdb_python_command_running:
+                    gdb_console_view.add_line(console_line, False)
+
+                # save the output (without the newline at the end)
+                gdb_last_console_line = console_line[:-1]
+
+            # filter out the program output and print it on the console view
+            if not (line.startswith("(gdb)") or line.startswith("~") or
+                    line.startswith("=") or line.startswith("&\"") or
+                    command_result_regex.match(line) or
+                    run_status_regex.match(line)):
+                # use the raw output to show exactly what the program printed
+                console_line = raw.decode(sys.getdefaultencoding())
+
+                # correct the line endings
+                console_line = "\n".join(console_line.splitlines())
+
+                gdb_console_view.add_line("%s\n" % console_line, False)
 
         except:
             traceback.print_exc()
@@ -1442,6 +1674,18 @@ def gdboutput(pipe):
 
 def cleanup():
     global __debug_file_handle
+    global gdb_process
+    global gdb_threads
+
+    # make sure all our threads are done
+    for t in gdb_threads:
+        t.join(get_setting("gdb_timeout", 20))
+    gdb_threads = []
+
+    # unset the process variable to make sure all pipes and other OS objects are
+    # released (this fixes different freezes when gdb is started multiple times)
+    gdb_process = None
+
     if get_setting("close_views", True):
         for view in gdb_views:
             view.close()
@@ -1474,12 +1718,12 @@ def programio(pty, tty):
             sublime.active_window().show_input_panel("stdin input expected: ", "input", self.on_done, None, lambda: self.queue.put(None))
 
         def readline(self):
-            ret = ""
+            ret = bytes()
             while True:
                 if not os.isatty(self.pty):
                     s = os.fstat(self.pty)
                     if self.off >= s.st_size and len(ret) == 0:
-                        return ret
+                        return bdecode(ret)
                 else:
                     import select
                     r, w, x = select.select([self.pty], [self.pty], [], 5.0)
@@ -1493,10 +1737,10 @@ def programio(pty, tty):
                         break
                 read = os.read(self.pty, 1)
                 self.off += len(read)
-                ret += bdecode(read)
-                if len(read) == 0 or ret.endswith("\n"):
+                ret += read
+                if len(read) == 0 or ret[-1] == ord('\n'):
                     break
-            return ret
+            return bdecode(ret)
 
         def close(self):
             os.close(self.pty)
@@ -1552,19 +1796,29 @@ class GdbNextCmd(sublime_plugin.TextCommand):
             set_input(edit, "")
 
 
-def show_input():
+def show_input(raw=False):
     global gdb_input_view
     global gdb_command_history_pos
     gdb_command_history_pos = len(gdb_command_history)
-    gdb_input_view = sublime.active_window().show_input_panel("GDB", "", input_on_done, input_on_change, input_on_cancel)
+
+    title = "GDB"
+    if raw:
+        title += " Raw"
+
+    gdb_input_view = sublime.active_window().show_input_panel(
+        title, "",
+        partial(input_on_done, raw=raw),
+        input_on_change,
+        input_on_cancel)
 
 
-
-def input_on_done(s):
+def input_on_done(s, raw=False):
     if s.strip() != "quit":
-        show_input()
         gdb_command_history.append(s)
-    run_cmd(s)
+        show_input(raw=raw)
+
+    mimode = not raw
+    run_cmd(s, mimode=mimode)
 
 
 def input_on_cancel():
@@ -1581,7 +1835,12 @@ def is_running():
 
 class GdbInput(sublime_plugin.WindowCommand):
     def run(self):
-        show_input()
+        show_input(raw=False)
+
+
+class GdbRawInput(sublime_plugin.WindowCommand):
+    def run(self):
+        show_input(raw=True)
 
 
 class GdbLaunch(sublime_plugin.WindowCommand):
@@ -1610,6 +1869,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
     def launch(self):
         global gdb_process
         global gdb_server_process
+        global gdb_threads
         global gdb_run_status
         global gdb_bkp_window
         global gdb_bkp_view
@@ -1621,7 +1881,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
         DEBUG = get_setting("debug", False, view)
         DEBUG_FILE = expand_path(get_setting("debug_file", "stdout", view), self.window)
         if DEBUG:
-            print("Will write debug info to file: %s" % DEBUG_FILE)
+            log_debug("Will write debug info to file: %s" % DEBUG_FILE)
         if gdb_process is None or gdb_process.poll() is not None:
             commandline = get_setting("commandline", view=view)
             if isinstance(commandline, list):
@@ -1701,8 +1961,10 @@ class GdbLaunch(sublime_plugin.WindowCommand):
 
             t = threading.Thread(target=gdboutput, args=(gdb_process.stdout,))
             t.start()
+            gdb_threads.append(t)
             t = threading.Thread(target=gdboutput, args=(gdb_process.stderr,))
             t.start()
+            gdb_threads.append(t)
 
             try:
                 raise Exception("Nope")
@@ -1714,6 +1976,7 @@ class GdbLaunch(sublime_plugin.WindowCommand):
             log_debug("pty: %s, tty: %s, name: %s" % (pty, tty, name))
             t = threading.Thread(target=programio, args=(pty,tty))
             t.start()
+            gdb_threads.append(t)
             try:
                 run_cmd("-gdb-show interpreter", True, timeout=get_setting("gdb_timeout", 20))
             except:
@@ -2006,6 +2269,17 @@ class GdbEventListener(sublime_plugin.EventListener):
     def on_activated(self, view):
         if view.file_name() is not None:
             update_view_markers(view)
+
+        # forward this event to GDBView
+        if view.name():
+            for gdb_view in gdb_views:
+                if view.name() == gdb_view.name:
+                    gdb_view.on_activated()
+                    break
+
+    def on_modified(self, view):
+        # update the current breakpoint locations
+        gdb_breakpoint_view.on_view_modified(view)
 
     def on_load(self, view):
         if view.file_name() is not None:
