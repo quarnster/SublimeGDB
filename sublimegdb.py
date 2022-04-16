@@ -31,6 +31,7 @@ import traceback
 import os
 import sys
 import re
+import queue
 from datetime import datetime
 from functools import partial
 try:
@@ -128,8 +129,8 @@ DEBUG = None
 DEBUG_FILE = None
 __debug_file_handle = None
 
-gdb_lastresult = ""
 gdb_lastline = ""
+gdb_lastresult = queue.Queue()
 gdb_last_console_line = ""
 gdb_cursor = ""
 gdb_cursor_position = 0
@@ -1455,12 +1456,13 @@ def run_cmd(cmd, block=False, mimode=True, timeout=None):
     gdb_process.stdin.flush()
     if block:
         countstr = "%d^" % count
-        while not gdb_lastresult.startswith(countstr) and \
-                (datetime.now() - start).total_seconds() <= timeout:
-            time.sleep(0.001)
-        if (datetime.now() - start).total_seconds() > timeout:
-            raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
-        return gdb_lastresult
+        r=""
+        while not r.startswith(countstr):
+            try:
+                r = gdb_lastresult.get(timeout=timeout)
+            except queue.Empty:
+                raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
+        return r
     return count
 
 
@@ -1487,11 +1489,12 @@ def run_python_cmd(cmd, block=False, timeout=None):
         gdb_python_command_running = True
         try:
             countstr = "%d^" % count
-            while not gdb_lastresult.startswith(countstr) and \
-                    (datetime.now() - start).total_seconds() <= timeout:
-                time.sleep(0.001)
-            if (datetime.now() - start).total_seconds() > timeout:
-                raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
+            r=""
+            while not r.startswith(countstr):
+                try:
+                    r = gdb_lastresult.get(timeout=timeout)
+                except queue.Empty:
+                    raise ValueError("Command \"%s\" took longer than %d seconds to perform?" % (cmd, timeout))
             return gdb_last_console_line
         finally:
             gdb_python_command_running = False
@@ -1617,6 +1620,9 @@ def gdboutput(pipe):
             if pipe != gdb_process.stdout:
                 continue
 
+            if command_result_regex.match(line) is not None:
+                gdb_lastresult.put(line)
+
             run_status = run_status_regex.match(line)
             if run_status is not None:
                 gdb_run_status = run_status.group(2)
@@ -1631,8 +1637,6 @@ def gdboutput(pipe):
                     sublime.set_timeout(update_cursor, 0)
             if not line.startswith("(gdb)"):
                 gdb_lastline = line
-            if command_result_regex.match(line) is not None:
-                gdb_lastresult = line
 
             if line.startswith("~"):
                 console_line = line[2:-1].replace("\\n", "\n").replace("\\\"", "\"").replace("\\t", "\t")
@@ -1851,18 +1855,24 @@ class GdbLaunch(sublime_plugin.WindowCommand):
 
         if exec_choices is None or type(exec_choices) != dict:
             # No executable specific settings, go ahead and launch
+            global gdb_threads
             exec_settings = {}
-            self.launch()
+            t = threading.Thread(target=self.launch)
+            t.start()
+            gdb_threads.append(t)
             return
 
         def on_choose(index):
             global exec_settings
+            global gdb_threads
             if index == -1:
                 # User cancelled the panel, abort launch
                 return
             exec_name = list(exec_choices)[index]
             exec_settings = exec_choices[exec_name]
-            self.launch()
+            t = threading.Thread(target=self.launch)
+            t.start()
+            gdb_threads.append(t)
 
         self.window.show_quick_panel(list(exec_choices), on_choose)
 
@@ -1988,7 +1998,7 @@ It seems you're not running gdb with the "mi" interpreter. Please add
             run_cmd("-inferior-tty-set %s" % name, True)
 
             run_cmd("-enable-pretty-printing")
-            run_cmd("-gdb-set target-async 1")
+            run_cmd("-gdb-set mi-async on")
             run_cmd("-gdb-set pagination off")
             dis_asm_flavor = get_setting("disassembly_flavor", "att", view)
             if dis_asm_flavor == "intel":
@@ -1999,7 +2009,8 @@ It seems you're not running gdb with the "mi" interpreter. Please add
             #     run_cmd("-gdb-set non-stop on")
             attach_cmd = get_setting("attach_cmd","notset")
             if(attach_cmd != "notset"):
-                run_cmd(attach_cmd)
+                run_cmd(attach_cmd, block=True, timeout=get_setting("gdb_timeout", 20))
+
             gdb_breakpoint_view.sync_breakpoints()
 
             if(get_setting("run_after_init", True)):
@@ -2013,9 +2024,9 @@ It seems you're not running gdb with the "mi" interpreter. Please add
 
             if(get_setting("enable_pretty_printing", True)):
                 run_cmd("-enable-pretty-printing")
-            
 
             show_input()
+
         else:
             sublime.status_message("GDB is already running!")
 
