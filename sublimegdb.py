@@ -2306,8 +2306,16 @@ class GdbSetVarFmt(sublime_plugin.TextCommand):
 
 class GdbAddMemDump(sublime_plugin.TextCommand):
     def run(self, edit):
-        gdb_variables_view.variables.append(GDBMemDump("c", 5))
-        gdb_variables_view.update_variables(True)
+        expression = [""]
+        length = [0]
+        def on_memdump_explen(l):
+            length[0] = int(l)
+            gdb_variables_view.variables.append(GDBMemDump(expression[0], length[0]))
+            gdb_variables_view.update_variables(True)
+        def on_memdump_expdone(exp):
+            expression[0] = exp
+            self.view.window().show_input_panel("Memdump length", "", on_memdump_explen, None, None)
+        self.view.window().show_input_panel("Memdump Expression", "", on_memdump_expdone, None, None)
         
 
 
