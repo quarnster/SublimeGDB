@@ -613,6 +613,7 @@ class GDBMemDump:
         self.wordlen = 1
         self.rows = self.len // self.cols + 1
         self.data = {}
+        self.oldata = {}
         self.children = []
 
     def delete(self):
@@ -621,11 +622,29 @@ class GDBMemDump:
     def update_value(self):
         line = run_cmd("-data-read-memory %s %s %d %d %d" % (self.exp, self.expfmt, self.wordlen, self.rows, self.cols) , True)
         if get_result(line) == "done":
+            self.oldata = self.data
             self.data = parse_result_line(line)
 
     def set_fmt(self, fmt):
         pass
 
+    def getchanged(self, view):
+        regions = []
+
+        if not 'memory' in self.oldata:
+            print("No old data")
+            return regions
+        for idx, (d, od) in enumerate(zip(self.data['memory'], self.oldata['memory'])):
+            newdat = d['data']
+            olddat = od['data'] if 'data' in od else None
+            offset = 6 + len(d['addr'])
+            if not olddat:
+                continue
+            for i in range(len(newdat)):
+                if(newdat[i] != olddat[i]):
+                    fieldlen = len(newdat[i]) if self.expfmt != "x" else len(newdat[i])-2
+                    regions.append(sublime.Region(view.text_point(self.line+idx+1, i*(fieldlen+1)+offset), view.text_point(self.line+idx+1, i*(fieldlen+1)+fieldlen)+offset))
+            return regions
 
     def update(self, d):
         pass
@@ -884,7 +903,10 @@ class GDBVariablesView(GDBView):
         output = ""
         line = 0
         dirtylist = []
+        dirty_memdump = []
         for local in self.variables:
+            if local.is_memdump:
+                dirty_memdump.append(local)
             output, line = local.format(line=line, dirty=dirtylist)
             self.add_line(output)
         self.update()
@@ -892,10 +914,15 @@ class GDBVariablesView(GDBView):
         v = self.get_view()
         for dirty in dirtylist:
             regions.append(v.full_line(v.text_point(dirty.line, 0)))
+
+        for mdump in dirty_memdump:
+            regions.extend(mdump.getchanged(v))
+
         v.add_regions("sublimegdb.dirtyvariables", regions,
                         get_setting("changed_variable_scope", "entity.name.class"),
                         get_setting("changed_variable_icon", ""),
                         sublime.DRAW_OUTLINED)
+
 
     def extract_varnames(self, res):
         if "name" in res:
