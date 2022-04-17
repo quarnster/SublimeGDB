@@ -620,7 +620,7 @@ class GDBMemDump:
         self.deleted = True
 
     def update_value(self):
-        line = run_cmd("-data-read-memory %s %s %d %d %d" % (self.exp, self.expfmt, self.wordlen, self.rows, self.cols) , True)
+        line = run_cmd("-data-read-memory %s %s %d %d %d \".\"" % (self.exp, self.expfmt, self.wordlen, self.rows, self.cols) , True)
         if get_result(line) == "done":
             self.oldata = self.data
             self.data = parse_result_line(line)
@@ -713,12 +713,20 @@ class GDBMemDump:
     def is_dirty(self):
         return self.dirty
 
-    def fmt_line(self, data, line):
-        dat = data[:max(self.len-((line-self.line)*self.cols),0)]
-        if self.expfmt == "x":
-            return " ".join([x[2:].upper() for x in dat])
+    def fmt_line(self, data, asci, line):
+        limit = max(self.len-((line-self.line)*self.cols), 0)
+        dat = data[:limit]
+        if asci is not None:
+            if self.expfmt == "x":
+                space = max(((line+1-self.line)*self.cols - self.len),0) * (1+len(data[0])-2)
+            else:
+                space = max(((line+1-self.line)*self.cols - self.len),0) * (1+len(data[0]))
         else:
-            return " ".join(dat)
+            space = 0
+        if self.expfmt == "x":
+            return " ".join([x[2:].upper() for x in dat]) + (" "*space) + (" // " if asci else "") + (asci or "")
+        else:
+            return " ".join(dat) + (" "*space) + (" // " if asci else "") + (asci or "")
 
     def format(self, indent="", output="", line=0, dirty=[]):
         if self.is_expanded:
@@ -732,7 +740,7 @@ class GDBMemDump:
         
         if self.is_expanded:
             for l in self.data['memory']:
-                output += "%s%s: %s\n" % (indent, l['addr'].upper(),self.fmt_line( l['data'], line))
+                output += "%s%s: %s\n" % (indent, l['addr'].upper().replace("X", "x"),self.fmt_line(l['data'], l['ascii'] if 'ascii' in l else None, line))
                 line += 1
                 self.children.append(GDBMemDumpChild(line, self))
 
