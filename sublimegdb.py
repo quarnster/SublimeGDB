@@ -712,7 +712,7 @@ class GDBMemDump:
         
         if self.is_expanded:
             for l in self.data['memory']:
-                output += "%s%s\n" % (indent, self.fmt_line(l['data'], line))
+                output += "%s%s: %s\n" % (indent, l['addr'].upper(),self.fmt_line( l['data'], line))
                 line += 1
                 self.children.append(GDBMemDumpChild(line, self))
 
