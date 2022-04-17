@@ -606,7 +606,7 @@ class GDBMemDump:
         self.is_expanded = True
         self.dirty = True
         self.deleted = False
-        self.cols = 5
+        self.cols = get_setting("memdump_cols", 4)
         self.len = memlen
         self.exp = exp
         self.expfmt = "x"
