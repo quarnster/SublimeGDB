@@ -745,11 +745,11 @@ class GDBMemDump:
         else:
             icon = "+"
 
-        output += "%sDUMP of %s\n" % (icon, self.exp)
+        self.children = list()
+        output += "%sDUMP of %s %s\n" % (icon, self.exp, "//(NOT IN SCOPE)" if not self.data else "")
         indent = "    "
         self.line = line
 
-        self.children = list()
         
         if self.is_expanded and 'memory' in self.data:
             for l in self.data['memory']:
