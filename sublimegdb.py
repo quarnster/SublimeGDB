@@ -31,6 +31,7 @@ import traceback
 import os
 import sys
 import re
+import math
 import queue
 from datetime import datetime
 from functools import partial
@@ -611,7 +612,7 @@ class GDBMemDump:
         self.exp = exp
         self.expfmt = "x"
         self.wordlen = wordlen
-        self.rows = self.len // self.cols + 1
+        self.rows = math.ceil(float(self.len) / self.cols)
         self.data = {}
         self.oldata = {}
         self.children = []
@@ -642,11 +643,14 @@ class GDBMemDump:
         if not self.is_expanded:
             return regions
 
-        if not 'memory' in self.oldata:
+        if not 'memory' in self.oldata or not 'memory' in self.data:
             return regions
         for idx in range(len(self.data['memory'])):
             newdat = self.data['memory'][idx]['data']
             olddat = self.oldata['memory'][idx]['data'] if self.oldata else None
+            # calculating the regions is a bit tricky because all characters in a line have to be included in the calc.
+            # one byte is displayed within fieldlen plus one space characters
+            # the comment sign takes 3 chars with one space included
             offset = 6 + len(self.data['memory'][idx]['addr'])
             if not olddat:
                 continue
