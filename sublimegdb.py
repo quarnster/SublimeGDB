@@ -373,6 +373,7 @@ class GDBVariable:
             self.update_value()
         self.dirty = False
         self.deleted = False
+        self.var_format = "natural"
 
     def delete(self):
         run_cmd("-var-delete %s" % self.get_name())
@@ -382,6 +383,12 @@ class GDBVariable:
         line = run_cmd("-var-evaluate-expression %s" % self["name"], True)
         if get_result(line) == "done":
             self['value'] = parse_result_line(line)["value"]
+
+    def set_fmt(self, fmt):
+        self.var_format = fmt
+        run_cmd("-var-set-format %s %s" % (self["name"], self.var_format), True)
+        self.update_value()
+
 
     def update(self, d):
         for key in d:
@@ -2142,6 +2149,23 @@ class GdbAddWatch(sublime_plugin.TextCommand):
         else:
             exp = self.view.substr(self.view.word(self.view.sel()[0].begin()))
             gdb_breakpoint_view.toggle_watch(exp)
+
+class GdbSetVarFmt(sublime_plugin.TextCommand):
+    def run(self, edit):
+        choices = ["natural", "decimal", "hexadecimal", "octal"]
+        var = None
+        def on_fmt_choose(idx):
+            if idx >= 0:
+                var.set_fmt(choices[idx])
+                gdb_variables_view.update_variables(True)
+
+        if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
+            var = gdb_variables_view.get_variable_at_line(self.view.rowcol(self.view.sel()[0].begin())[0])
+            if var is not None:
+                self.view.window().show_quick_panel(choices, on_fmt_choose)
+            else:
+                sublime.status_message("No variable selected to choose format for.")
+
 
 
 class GdbToggleBreakpoint(sublime_plugin.TextCommand):

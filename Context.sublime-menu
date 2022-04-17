@@ -52,6 +52,10 @@
         {
             "caption": "Add watch",
             "command": "gdb_add_watch"
+        },
+        {
+            "caption": "Set variable format",
+            "command": "gdb_set_var_fmt"
         }
     ]
 }]
