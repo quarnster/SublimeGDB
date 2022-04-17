@@ -593,12 +593,17 @@ class GDBVariable:
 
         return type
 
+class GDBMemDumpChild:
+    def __init__(self, line, parent):
+        self.line = line
+        self.parent = parent
+
 class GDBMemDump:
     def __init__(self, exp, memlen, vp=None, parent=None):
         self.parent = parent
         self.valuepair = vp
         self.line = 0
-        self.is_expanded = False
+        self.is_expanded = True
         self.dirty = True
         self.deleted = False
         self.cols = 5
@@ -608,6 +613,7 @@ class GDBMemDump:
         self.wordlen = 1
         self.rows = self.len // self.cols + 1
         self.data = {}
+        self.children = []
 
     def delete(self):
         self.deleted = True
@@ -616,7 +622,6 @@ class GDBMemDump:
         line = run_cmd("-data-read-memory %s %s %d %d %d" % (self.exp, self.expfmt, self.wordlen, self.rows, self.cols) , True)
         if get_result(line) == "done":
             self.data = parse_result_line(line)
-            print("Got data: {}".format(self.data))
 
     def set_fmt(self, fmt):
         pass
@@ -650,12 +655,10 @@ class GDBMemDump:
         return self.exp
 
     def expand(self):
-        if not self.is_existing():
-            return
         self.is_expanded = True
         
     def has_children(self):
-        return False
+        return True
 
     def collapse(self):
         self.is_expanded = False
@@ -696,14 +699,15 @@ class GDBMemDump:
         else:
             icon = "+"
 
-        output += "%s%s%s\n" % (indent, icon, self.exp)
+        output += "%sDUMP of %s\n" % (icon, self.exp)
         indent = "    "
+        self.line = line
         
         if self.is_expanded:
             for l in self.data['memory']:
                 output += "%s%s\n" % (indent, " ".join(l['data']))
- 
-
+                line += 1
+                self.children.append(GDBMemDumpChild(line, self))
 
         return (output, line)
 
