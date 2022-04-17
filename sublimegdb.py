@@ -761,6 +761,7 @@ class GDBMemDump:
                 line += 1
                 self.children.append(GDBMemDumpChild(line, self))
 
+        line += 1
         return (output, line)
 
     @staticmethod
