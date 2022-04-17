@@ -1035,6 +1035,11 @@ class GDBVariablesView(GDBView):
                 var.delete()
             args = self.extract_varnames(parse_result_line(run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True))["stack-args"]["frame"]["args"])
             self.variables = []
+            
+            memdumps = get_setting("memdumps", [])
+            for m in memdumps:
+                self.variables.append(GDBMemDump(m['exp'], m['words'], wordlen=m['wordlen']))
+
             for arg in args:
                 self.add_variable(arg)
             loc = self.extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
