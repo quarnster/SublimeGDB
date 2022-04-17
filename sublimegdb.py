@@ -645,6 +645,8 @@ class GDBMemDump:
                 if(newdat[i] != olddat[i] and idx*self.cols+i < self.len):
                     fieldlen = len(newdat[i]) if self.expfmt != "x" else len(newdat[i])-2
                     regions.append(sublime.Region(view.text_point(self.line+idx+1, i*(fieldlen+1)+offset), view.text_point(self.line+idx+1, i*(fieldlen+1)+fieldlen)+offset))
+                    if self.data['memory'][idx]['ascii']:
+                        regions.append(sublime.Region(view.text_point(self.line+idx+1, (self.cols*(fieldlen+1))+offset+3+i), view.text_point(self.line+idx+1, (self.cols*(fieldlen+1))+offset+3+i+1)))
         return regions
 
     def update(self, d):
