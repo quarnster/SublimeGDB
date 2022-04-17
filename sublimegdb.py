@@ -693,6 +693,13 @@ class GDBMemDump:
     def is_dirty(self):
         return self.dirty
 
+    def fmt_line(self, data, line):
+        dat = data[:max(self.len-((line-self.line)*self.cols),0)]
+        if self.expfmt == "x":
+            return " ".join([x[2:].upper() for x in dat])
+        else:
+            return " ".join(dat)
+
     def format(self, indent="", output="", line=0, dirty=[]):
         if self.is_expanded:
             icon = "-"
@@ -705,7 +712,7 @@ class GDBMemDump:
         
         if self.is_expanded:
             for l in self.data['memory']:
-                output += "%s%s\n" % (indent, " ".join(l['data']))
+                output += "%s%s\n" % (indent, self.fmt_line(l['data'], line))
                 line += 1
                 self.children.append(GDBMemDumpChild(line, self))
 
