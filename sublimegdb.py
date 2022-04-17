@@ -621,9 +621,15 @@ class GDBMemDump:
 
     def update_value(self):
         line = run_cmd("-data-read-memory %s %s %d %d %d \".\"" % (self.exp, self.expfmt, self.wordlen, self.rows, self.cols) , True)
-        if get_result(line) == "done":
+        if get_result(line, False) == "done":
             self.oldata = self.data
             self.data = parse_result_line(line)
+            self.deleted = False
+        else:
+            self.oldata = self.data
+            self.data = {}
+            self.deleted = True
+
 
     def set_fmt(self, fmt):
         pass
@@ -740,7 +746,7 @@ class GDBMemDump:
         indent = "    "
         self.line = line
         
-        if self.is_expanded:
+        if self.is_expanded and 'memory' in self.data:
             for l in self.data['memory']:
                 output += "%s%s: %s\n" % (indent, l['addr'].upper().replace("X", "x"),self.fmt_line(l['data'], l['ascii'] if 'ascii' in l else None, line))
                 line += 1
