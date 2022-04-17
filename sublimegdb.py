@@ -630,21 +630,22 @@ class GDBMemDump:
 
     def getchanged(self, view):
         regions = []
+        if not self.is_expanded:
+            return regions
 
         if not 'memory' in self.oldata:
-            print("No old data")
             return regions
-        for idx, (d, od) in enumerate(zip(self.data['memory'], self.oldata['memory'])):
-            newdat = d['data']
-            olddat = od['data'] if 'data' in od else None
-            offset = 6 + len(d['addr'])
+        for idx in range(len(self.data['memory'])):
+            newdat = self.data['memory'][idx]['data']
+            olddat = self.oldata['memory'][idx]['data'] if self.oldata else None
+            offset = 6 + len(self.data['memory'][idx]['addr'])
             if not olddat:
                 continue
             for i in range(len(newdat)):
-                if(newdat[i] != olddat[i]):
+                if(newdat[i] != olddat[i] and idx*self.cols+i < self.len):
                     fieldlen = len(newdat[i]) if self.expfmt != "x" else len(newdat[i])-2
                     regions.append(sublime.Region(view.text_point(self.line+idx+1, i*(fieldlen+1)+offset), view.text_point(self.line+idx+1, i*(fieldlen+1)+fieldlen)+offset))
-            return regions
+        return regions
 
     def update(self, d):
         pass
