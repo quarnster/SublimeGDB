@@ -84,5 +84,9 @@
     {
         "caption": "SublimeGDB: Open Threads View",
         "command": "gdb_open_threads_view"
+    },
+    {
+        "caption": "SublimeGDB: Add MemDump",
+        "command": "gdb_add_mem_dump"
     }
 ]

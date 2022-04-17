@@ -522,6 +522,10 @@ class GDBVariable:
     def is_dynamic(self):
         return ('dynamic' in self)
 
+    @property
+    def is_memdump(self):
+        return False
+
     def update_from(self, var):
         if (var.is_expanded):
             self.expand()
@@ -588,6 +592,125 @@ class GDBVariable:
             type = sub(f["pattern"], f["replace"], type)
 
         return type
+
+class GDBMemDump:
+    def __init__(self, exp, memlen, vp=None, parent=None):
+        self.parent = parent
+        self.valuepair = vp
+        self.line = 0
+        self.is_expanded = False
+        self.dirty = True
+        self.deleted = False
+        self.cols = 5
+        self.len = memlen
+        self.exp = exp
+        self.expfmt = "x"
+        self.wordlen = 1
+        self.rows = self.len // self.cols + 1
+        self.data = {}
+
+    def delete(self):
+        self.deleted = True
+
+    def update_value(self):
+        line = run_cmd("-data-read-memory %s %s %d %d %d" % (self.exp, self.expfmt, self.wordlen, self.rows, self.cols) , True)
+        if get_result(line) == "done":
+            self.data = parse_result_line(line)
+            print("Got data: {}".format(self.data))
+
+    def set_fmt(self, fmt):
+        pass
+
+
+    def update(self, d):
+        pass
+
+    def is_existing(self):
+        return True
+
+    def get_expression(self):
+        return self.exp
+
+    def add_children(self, name):
+        pass
+
+    def is_editable(self):
+       return False
+
+    def edit_on_done(self, val):
+        pass
+
+    def find(self, name):
+        return None
+
+    def edit(self):
+        pass
+
+    def get_name(self):
+        return self.exp
+
+    def expand(self):
+        if not self.is_existing():
+            return
+        self.is_expanded = True
+        
+    def has_children(self):
+        return False
+
+    def collapse(self):
+        self.is_expanded = False
+
+    def __str__(self):
+        return "dump %s" % (self.exp)
+
+    def __iter__(self):
+        return self.valuepair.__iter__()
+
+    def __getitem__(self, key):
+        return self.valuepair[key]
+
+
+    @property
+    def is_dynamic(self):
+        return False
+
+    @property
+    def is_memdump(self):
+        return True
+
+    def update_from(self, var):
+        pass
+
+    def find_child_expression(self, exp):
+        return None
+
+    def clear_dirty(self):
+        self.dirty = False
+
+    def is_dirty(self):
+        return self.dirty
+
+    def format(self, indent="", output="", line=0, dirty=[]):
+        if self.is_expanded:
+            icon = "-"
+        else:
+            icon = "+"
+
+        output += "%s%s%s\n" % (indent, icon, self.exp)
+        indent = "    "
+        
+        if self.is_expanded:
+            for l in self.data['memory']:
+                output += "%s%s\n" % (indent, " ".join(l['data']))
+ 
+
+
+        return (output, line)
+
+    @staticmethod
+    def filter_type(type):
+        return "dump"
+
 
 def qtod(q):
     val = struct.pack("Q", q)
@@ -792,7 +915,10 @@ class GDBVariablesView(GDBView):
         if sameFrame:
             variables = []
             for var in self.variables:    # completely replace dynamic variables because we don't always get proper update notifications
-                if (var.is_dynamic):
+                if var.is_memdump:
+                    variables.append(var)
+                    var.update_value()
+                elif (var.is_dynamic):
                     var.delete()
                     newVar = self.create_variable(var['exp'], False)
                     if (newVar):    # may have gone out of scope without notification
@@ -2166,6 +2292,12 @@ class GdbSetVarFmt(sublime_plugin.TextCommand):
             else:
                 sublime.status_message("No variable selected to choose format for.")
 
+
+class GdbAddMemDump(sublime_plugin.TextCommand):
+    def run(self, edit):
+        gdb_variables_view.variables.append(GDBMemDump("c", 5))
+        gdb_variables_view.update_variables(True)
+        
 
 
 class GdbToggleBreakpoint(sublime_plugin.TextCommand):
