@@ -624,11 +624,14 @@ class GDBMemDump:
         if get_result(line, False) == "done":
             self.oldata = self.data
             self.data = parse_result_line(line)
-            self.deleted = False
+            self.valuepair = {'exp': self.exp}
+            if self.is_expanded is False and not self.oldata:
+                self.is_expanded = True
         else:
             self.oldata = self.data
             self.data = {}
-            self.deleted = True
+            self.is_expanded = False
+            self.children = list()
 
 
     def set_fmt(self, fmt):
@@ -719,7 +722,7 @@ class GDBMemDump:
         self.dirty = False
 
     def is_dirty(self):
-        return self.dirty
+        return True
 
     def fmt_line(self, data, asci, line):
         limit = max(self.len-((line-self.line)*self.cols), 0)
@@ -745,6 +748,8 @@ class GDBMemDump:
         output += "%sDUMP of %s\n" % (icon, self.exp)
         indent = "    "
         self.line = line
+
+        self.children = list()
         
         if self.is_expanded and 'memory' in self.data:
             for l in self.data['memory']:
@@ -992,7 +997,9 @@ class GDBVariablesView(GDBView):
                 for var in self.variables:
                     real = var.find(name)
                     if (real is not None):
-                        if  "in_scope" in value and value["in_scope"] == "false":
+                        if var.is_memdump:
+                            continue
+                        elif "in_scope" in value and value["in_scope"] == "false":
                             real.delete()
                             dellist.append(real)
                             continue
@@ -2359,10 +2366,10 @@ class GdbAddMemDump(sublime_plugin.TextCommand):
             gdb_variables_view.update_variables(True)
         def on_memdump_explen(l):
             length[0] = int(l)
-            self.view.window().show_input_panel("Memdump wordlength", "", on_memdump_wordlen, None, None)
+            self.view.window().show_input_panel("Memdump wordlength", "1", on_memdump_wordlen, None, None)
         def on_memdump_expdone(exp):
             expression[0] = exp
-            self.view.window().show_input_panel("Memdump length", "", on_memdump_explen, None, None)
+            self.view.window().show_input_panel("Memdump number of words", "", on_memdump_explen, None, None)
         self.view.window().show_input_panel("Memdump Expression", "", on_memdump_expdone, None, None)
         
 
