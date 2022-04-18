@@ -602,7 +602,7 @@ class GDBMemDumpChild:
 class GDBMemDump:
     def __init__(self, exp, memlen, wordlen=1, vp=None, parent=None):
         self.parent = parent
-        self.valuepair = vp
+        self.valuepair = vp if vp else {'exp': exp}
         self.line = 0
         self.is_expanded = True
         self.dirty = True
