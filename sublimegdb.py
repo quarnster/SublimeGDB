@@ -31,6 +31,7 @@ import traceback
 import os
 import sys
 import re
+import math
 import queue
 from datetime import datetime
 from functools import partial
@@ -373,6 +374,7 @@ class GDBVariable:
             self.update_value()
         self.dirty = False
         self.deleted = False
+        self.var_format = "natural"
 
     def delete(self):
         run_cmd("-var-delete %s" % self.get_name())
@@ -382,6 +384,12 @@ class GDBVariable:
         line = run_cmd("-var-evaluate-expression %s" % self["name"], True)
         if get_result(line) == "done":
             self['value'] = parse_result_line(line)["value"]
+
+    def set_fmt(self, fmt):
+        self.var_format = fmt
+        run_cmd("-var-set-format %s %s" % (self["name"], self.var_format), True)
+        self.update_value()
+
 
     def update(self, d):
         for key in d:
@@ -515,6 +523,10 @@ class GDBVariable:
     def is_dynamic(self):
         return ('dynamic' in self)
 
+    @property
+    def is_memdump(self):
+        return False
+
     def update_from(self, var):
         if (var.is_expanded):
             self.expand()
@@ -581,6 +593,182 @@ class GDBVariable:
             type = sub(f["pattern"], f["replace"], type)
 
         return type
+
+class GDBMemDumpChild:
+    def __init__(self, line, parent):
+        self.line = line
+        self.parent = parent
+
+class GDBMemDump:
+    def __init__(self, exp, memlen, wordlen=1, vp=None, parent=None):
+        self.parent = parent
+        self.valuepair = vp if vp else {'exp': exp}
+        self.line = 0
+        self.is_expanded = True
+        self.dirty = True
+        self.deleted = False
+        self.cols = get_setting("memdump_cols", 4)
+        self.len = memlen
+        self.exp = exp
+        self.expfmt = "x"
+        self.wordlen = wordlen
+        self.rows = math.ceil(float(self.len) / self.cols)
+        self.data = {}
+        self.oldata = {}
+        self.children = []
+        self.update_value()
+
+    def delete(self):
+        self.deleted = True
+
+    def update_value(self):
+        line = run_cmd("-data-read-memory %s %s %d %d %d \".\"" % (self.exp, self.expfmt, self.wordlen, self.rows, self.cols) , True)
+        if get_result(line, False) == "done":
+            self.oldata = self.data
+            self.data = parse_result_line(line)
+            self.valuepair = {'exp': self.exp}
+            if self.is_expanded is False and not self.oldata:
+                self.is_expanded = True
+        else:
+            self.oldata = self.data
+            self.data = {}
+            self.is_expanded = False
+            self.children = list()
+
+
+    def set_fmt(self, fmt):
+        pass
+
+    def getchanged(self, view):
+        regions = []
+        if not self.is_expanded:
+            return regions
+
+        if not 'memory' in self.oldata or not 'memory' in self.data:
+            return regions
+        for idx in range(len(self.data['memory'])):
+            newdat = self.data['memory'][idx]['data']
+            olddat = self.oldata['memory'][idx]['data'] if self.oldata else None
+            # calculating the regions is a bit tricky because all characters in a line have to be included in the calc.
+            # one byte is displayed within fieldlen plus one space characters
+            # the comment sign takes 3 chars with one space included
+            offset = 6 + len(self.data['memory'][idx]['addr'])
+            if not olddat:
+                continue
+            for i in range(len(newdat)):
+                if(newdat[i] != olddat[i] and idx*self.cols+i < self.len):
+                    fieldlen = len(newdat[i]) if self.expfmt != "x" else len(newdat[i])-2
+                    regions.append(sublime.Region(view.text_point(self.line+idx+1, i*(fieldlen+1)+offset), view.text_point(self.line+idx+1, i*(fieldlen+1)+fieldlen)+offset))
+                    if self.data['memory'][idx]['ascii']:
+                        regions.append(sublime.Region(view.text_point(self.line+idx+1, (self.cols*(fieldlen+1))+offset+3+self.wordlen*i), view.text_point(self.line+idx+1, (self.cols*(fieldlen+1))+offset+3+(i+1)*self.wordlen)))
+        return regions
+
+    def update(self, d):
+        pass
+
+    def is_existing(self):
+        return True
+
+    def get_expression(self):
+        return self.exp
+
+    def add_children(self, name):
+        pass
+
+    def is_editable(self):
+       return False
+
+    def edit_on_done(self, val):
+        pass
+
+    def find(self, name):
+        return None
+
+    def edit(self):
+        pass
+
+    def get_name(self):
+        return self.exp
+
+    def expand(self):
+        self.is_expanded = True
+        
+    def has_children(self):
+        return True
+
+    def collapse(self):
+        self.is_expanded = False
+
+    def __str__(self):
+        return "dump %s" % (self.exp)
+
+    def __iter__(self):
+        return self.valuepair.__iter__()
+
+    def __getitem__(self, key):
+        return self.valuepair[key]
+
+
+    @property
+    def is_dynamic(self):
+        return False
+
+    @property
+    def is_memdump(self):
+        return True
+
+    def update_from(self, var):
+        pass
+
+    def find_child_expression(self, exp):
+        return None
+
+    def clear_dirty(self):
+        self.dirty = False
+
+    def is_dirty(self):
+        return True
+
+    def fmt_line(self, data, asci, line):
+        limit = max(self.len-((line-self.line)*self.cols), 0)
+        dat = data[:limit]
+        if asci is not None:
+            if self.expfmt == "x":
+                space = max(((line+1-self.line)*self.cols - self.len),0) * (1+len(data[0])-2)
+            else:
+                space = max(((line+1-self.line)*self.cols - self.len),0) * (1+len(data[0]))
+        else:
+            space = 0
+        if self.expfmt == "x":
+            return " ".join([x[2:].upper() for x in dat]) + (" "*space) + (" // " if asci else "") + (asci or "")
+        else:
+            return " ".join(dat) + (" "*space) + (" // " if asci else "") + (asci or "")
+
+    def format(self, indent="", output="", line=0, dirty=[]):
+        if self.is_expanded:
+            icon = "-"
+        else:
+            icon = "+"
+
+        self.children = list()
+        output += "%sDUMP of %s %s\n" % (icon, self.exp, "//(NOT IN SCOPE)" if not self.data else "")
+        indent = "    "
+        self.line = line
+
+        
+        if self.is_expanded and 'memory' in self.data:
+            for l in self.data['memory']:
+                output += "%s%s: %s\n" % (indent, l['addr'].upper().replace("X", "x"),self.fmt_line(l['data'], l['ascii'] if 'ascii' in l else None, line))
+                line += 1
+                self.children.append(GDBMemDumpChild(line, self))
+
+        line += 1
+        return (output, line)
+
+    @staticmethod
+    def filter_type(type):
+        return "dump"
+
 
 def qtod(q):
     val = struct.pack("Q", q)
@@ -743,7 +931,10 @@ class GDBVariablesView(GDBView):
         output = ""
         line = 0
         dirtylist = []
+        dirty_memdump = []
         for local in self.variables:
+            if local.is_memdump:
+                dirty_memdump.append(local)
             output, line = local.format(line=line, dirty=dirtylist)
             self.add_line(output)
         self.update()
@@ -751,10 +942,15 @@ class GDBVariablesView(GDBView):
         v = self.get_view()
         for dirty in dirtylist:
             regions.append(v.full_line(v.text_point(dirty.line, 0)))
+
+        for mdump in dirty_memdump:
+            regions.extend(mdump.getchanged(v))
+
         v.add_regions("sublimegdb.dirtyvariables", regions,
                         get_setting("changed_variable_scope", "entity.name.class"),
                         get_setting("changed_variable_icon", ""),
                         sublime.DRAW_OUTLINED)
+
 
     def extract_varnames(self, res):
         if "name" in res:
@@ -785,7 +981,10 @@ class GDBVariablesView(GDBView):
         if sameFrame:
             variables = []
             for var in self.variables:    # completely replace dynamic variables because we don't always get proper update notifications
-                if (var.is_dynamic):
+                if var.is_memdump:
+                    variables.append(var)
+                    var.update_value()
+                elif (var.is_dynamic):
                     var.delete()
                     newVar = self.create_variable(var['exp'], False)
                     if (newVar):    # may have gone out of scope without notification
@@ -804,7 +1003,9 @@ class GDBVariablesView(GDBView):
                 for var in self.variables:
                     real = var.find(name)
                     if (real is not None):
-                        if  "in_scope" in value and value["in_scope"] == "false":
+                        if var.is_memdump:
+                            continue
+                        elif "in_scope" in value and value["in_scope"] == "false":
                             real.delete()
                             dellist.append(real)
                             continue
@@ -836,6 +1037,11 @@ class GDBVariablesView(GDBView):
                 var.delete()
             args = self.extract_varnames(parse_result_line(run_cmd("-stack-list-arguments 0 %d %d" % (gdb_stack_index, gdb_stack_index), True))["stack-args"]["frame"]["args"])
             self.variables = []
+            
+            memdumps = get_setting("memdumps", [])
+            for m in memdumps:
+                self.variables.append(GDBMemDump(m['exp'], m['words'], wordlen=m['wordlen']))
+
             for arg in args:
                 self.add_variable(arg)
             loc = self.extract_varnames(parse_result_line(run_cmd("-stack-list-locals 0", True))["locals"])
@@ -2142,6 +2348,41 @@ class GdbAddWatch(sublime_plugin.TextCommand):
         else:
             exp = self.view.substr(self.view.word(self.view.sel()[0].begin()))
             gdb_breakpoint_view.toggle_watch(exp)
+
+class GdbSetVarFmt(sublime_plugin.TextCommand):
+    def run(self, edit):
+        choices = ["natural", "decimal", "hexadecimal", "octal"]
+        var = None
+        def on_fmt_choose(idx):
+            if idx >= 0:
+                var.set_fmt(choices[idx])
+                gdb_variables_view.update_variables(True)
+
+        if gdb_variables_view.is_open() and self.view.id() == gdb_variables_view.get_view().id():
+            var = gdb_variables_view.get_variable_at_line(self.view.rowcol(self.view.sel()[0].begin())[0])
+            if var is not None:
+                self.view.window().show_quick_panel(choices, on_fmt_choose)
+            else:
+                sublime.status_message("No variable selected to choose format for.")
+
+
+class GdbAddMemDump(sublime_plugin.TextCommand):
+    def run(self, edit):
+        expression = [""]
+        length = [0]
+        wordlength = [0]
+        def on_memdump_wordlen(l):
+            wordlength[0] = int(l)
+            gdb_variables_view.variables.append(GDBMemDump(expression[0], length[0], wordlen=wordlength[0]))
+            gdb_variables_view.update_variables(True)
+        def on_memdump_explen(l):
+            length[0] = int(l)
+            self.view.window().show_input_panel("Memdump wordlength", "1", on_memdump_wordlen, None, None)
+        def on_memdump_expdone(exp):
+            expression[0] = exp
+            self.view.window().show_input_panel("Memdump number of words", "", on_memdump_explen, None, None)
+        self.view.window().show_input_panel("Memdump Expression", "", on_memdump_expdone, None, None)
+        
 
 
 class GdbToggleBreakpoint(sublime_plugin.TextCommand):
