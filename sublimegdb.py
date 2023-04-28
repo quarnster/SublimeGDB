@@ -109,16 +109,21 @@ def expand_path(value, window):
         ]
     view = window.active_view()
     file_name = view.file_name();
+    sublime_vars = window.extract_variables()
     # replace variable with values
     if file_name:
         value = re.sub(r'\${file}', lambda m: file_name, value)
         value = re.sub(r'\${file_base_name}', lambda m: os.path.splitext(os.path.basename(file_name))[0], value)
     if os.getenv("HOME"):
         value = re.sub(r'\${home}', re.escape(os.getenv('HOME')), value)
-    value = re.sub(r'\${env:(?P<variable>.*)}', lambda m: os.getenv(m.group('variable')), value)
+    n=1
+    while n:
+        value,n = re.subn(r'\${env:(?P<variable>[^$]*?)}', lambda m: os.getenv(m.group('variable')) if os.getenv(m.group('variable')) else sublime_vars[m.group('variable')], value)
     # search in projekt for path and get folder from path
-    value = re.sub(r'\${project_path:(?P<file>[^}]+)}', lambda m: len(get_existing_files(m)) > 0 and get_existing_files(m)[0] or m.group('file'), value)
-    value = re.sub(r'\${folder:(?P<file>.*)}', lambda m: os.path.dirname(m.group('file')), value)
+    value = re.sub(r'\${project_path:(?P<file>.*?)}', lambda m: len(get_existing_files(m)) > 0 and get_existing_files(m)[0] or m.group('file'), value)
+    n=1
+    while n:
+        value,n = re.subn(r'\${folder:(?P<file>.*?)}', lambda m: os.path.dirname(m.group('file')), value)
     value = value.replace('\\', os.sep)
     value = value.replace('/', os.sep)
 
